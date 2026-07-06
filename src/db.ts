@@ -1,7 +1,17 @@
 import * as SQLite from "expo-sqlite";
 
 import { EXERCISE_DEFS } from "./plan";
-import type { ExerciseDef, ExerciseLog, Setting, WorkoutSession } from "./types";
+import { XP_EVENTS } from "./logic/xp";
+import type {
+  ExerciseDef,
+  ExerciseLog,
+  LifetimeTotals,
+  RowSession,
+  Setting,
+  WeighIn,
+  WeightSettings,
+  WorkoutSession
+} from "./types";
 
 const DATABASE_NAME = "pug-iron.db";
 const SCHEMA_VERSION = 1;
@@ -36,8 +46,27 @@ type SessionRow = {
   xp: number;
 };
 
+type RowSessionRow = {
+  id: number;
+  date: string;
+  minutes: number;
+  meters: number | null;
+  xp: number;
+};
+
+type WeighInRow = {
+  id: number;
+  date: string;
+  kg: number;
+  xp: number;
+};
+
 type SettingValueRow = {
   value: string;
+};
+
+type CountRow = {
+  count: number;
 };
 
 const DEFAULT_SETTINGS: Setting[] = [
@@ -153,6 +182,26 @@ export async function listWorkoutSessions(db: PugIronDb): Promise<WorkoutSession
   return rows.map(mapSessionRow);
 }
 
+export async function listRowSessions(db: PugIronDb): Promise<RowSession[]> {
+  const rows = await db.getAllAsync<RowSessionRow>(
+    `SELECT id, date, minutes, meters, xp
+     FROM rows
+     ORDER BY date DESC, id DESC;`
+  );
+
+  return rows.map(mapRowSessionRow);
+}
+
+export async function listWeighIns(db: PugIronDb): Promise<WeighIn[]> {
+  const rows = await db.getAllAsync<WeighInRow>(
+    `SELECT id, date, kg, xp
+     FROM weighins
+     ORDER BY date ASC, id ASC;`
+  );
+
+  return rows.map(mapWeighInRow);
+}
+
 export async function getLatestExerciseLogs(
   db: PugIronDb,
   exerciseIds: string[]
@@ -186,6 +235,66 @@ export async function getLatestExerciseLogs(
   return logs;
 }
 
+export async function getWeightSettings(db: PugIronDb): Promise<WeightSettings> {
+  const targetWeightKg = await getSettingValue(db, "targetWeightKg", 83);
+  let startWeightKg = await getSettingValue<number | null>(db, "startWeightKg", null);
+
+  if (typeof startWeightKg !== "number") {
+    const firstWeighIn = await db.getFirstAsync<Pick<WeighInRow, "kg">>(
+      `SELECT kg
+       FROM weighins
+       ORDER BY date ASC, id ASC
+       LIMIT 1;`
+    );
+
+    if (firstWeighIn) {
+      startWeightKg = firstWeighIn.kg;
+      await setSettingValue(db, "startWeightKg", startWeightKg);
+    }
+  }
+
+  return {
+    targetWeightKg,
+    startWeightKg: typeof startWeightKg === "number" ? startWeightKg : null
+  };
+}
+
+export async function getLifetimeTotals(db: PugIronDb): Promise<LifetimeTotals> {
+  const [sessions, rowSessions, exercises] = await Promise.all([
+    listWorkoutSessions(db),
+    listRowSessions(db),
+    listExerciseDefs(db)
+  ]);
+  const exercisesById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
+
+  return {
+    sessions: sessions.length,
+    sets: sessions.reduce(
+      (total, session) =>
+        total + session.entries.reduce((sessionTotal, entry) => sessionTotal + entry.sets.length, 0),
+      0
+    ),
+    kgLifted: sessions.reduce(
+      (total, session) =>
+        total +
+        session.entries.reduce((sessionTotal, entry) => {
+          const exercise = exercisesById.get(entry.exerciseId);
+
+          if (exercise?.loadType !== "weight") {
+            return sessionTotal;
+          }
+
+          return (
+            sessionTotal +
+            entry.sets.reduce((entryTotal, set) => entryTotal + set.weight * set.reps, 0)
+          );
+        }, 0),
+      0
+    ),
+    metersRowed: rowSessions.reduce((total, rowSession) => total + (rowSession.meters ?? 0), 0)
+  };
+}
+
 export async function insertWorkoutSessionWithXp(
   db: PugIronDb,
   session: WorkoutSession
@@ -214,6 +323,77 @@ export async function insertWorkoutSessionWithXp(
   });
 
   return { ...session, id: insertedId };
+}
+
+export async function insertRowSessionWithXp(
+  db: PugIronDb,
+  rowSession: Omit<RowSession, "id" | "xp">
+): Promise<RowSession> {
+  let insertedId: number | undefined;
+  const xp = XP_EVENTS.rowerSession;
+
+  await db.withTransactionAsync(async () => {
+    const result = await db.runAsync(
+      `INSERT INTO rows (date, minutes, meters, xp)
+       VALUES (?, ?, ?, ?);`,
+      [rowSession.date, rowSession.minutes, rowSession.meters ?? null, xp]
+    );
+
+    insertedId = result.lastInsertRowId;
+
+    const currentXp = await getSettingValue(db, "xpTotal", 0);
+    await setSettingValue(db, "xpTotal", currentXp + xp);
+  });
+
+  return { ...rowSession, id: insertedId, xp };
+}
+
+export async function insertWeighInWithXp(
+  db: PugIronDb,
+  weighIn: Omit<WeighIn, "id" | "xp">
+): Promise<WeighIn> {
+  let insertedId: number | undefined;
+  let xp = 0;
+
+  await db.withTransactionAsync(async () => {
+    const existingForDate = await db.getFirstAsync<CountRow>(
+      `SELECT COUNT(*) AS count
+       FROM weighins
+       WHERE date = ?;`,
+      [weighIn.date]
+    );
+    xp = (existingForDate?.count ?? 0) > 0 ? 0 : XP_EVENTS.weighIn;
+
+    const result = await db.runAsync(
+      `INSERT INTO weighins (date, kg, xp)
+       VALUES (?, ?, ?);`,
+      [weighIn.date, weighIn.kg, xp]
+    );
+
+    insertedId = result.lastInsertRowId;
+
+    if (xp > 0) {
+      const currentXp = await getSettingValue(db, "xpTotal", 0);
+      await setSettingValue(db, "xpTotal", currentXp + xp);
+    }
+
+    const currentStartWeight = await getSettingValue<number | null>(db, "startWeightKg", null);
+
+    if (typeof currentStartWeight !== "number") {
+      const firstWeighIn = await db.getFirstAsync<Pick<WeighInRow, "kg">>(
+        `SELECT kg
+         FROM weighins
+         ORDER BY date ASC, id ASC
+         LIMIT 1;`
+      );
+
+      if (firstWeighIn) {
+        await setSettingValue(db, "startWeightKg", firstWeighIn.kg);
+      }
+    }
+  });
+
+  return { ...weighIn, id: insertedId, xp };
 }
 
 async function runMigrations(db: PugIronDb): Promise<void> {
@@ -312,6 +492,25 @@ function mapSessionRow(row: SessionRow): WorkoutSession {
     progressionEvents: parseJson<string[]>(row.progression_events),
     startedAt: row.started_at,
     ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+    xp: row.xp
+  };
+}
+
+function mapRowSessionRow(row: RowSessionRow): RowSession {
+  return {
+    id: row.id,
+    date: row.date,
+    minutes: row.minutes,
+    ...(row.meters === null ? {} : { meters: row.meters }),
+    xp: row.xp
+  };
+}
+
+function mapWeighInRow(row: WeighInRow): WeighIn {
+  return {
+    id: row.id,
+    date: row.date,
+    kg: row.kg,
     xp: row.xp
   };
 }

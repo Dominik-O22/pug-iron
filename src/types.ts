@@ -51,3 +51,15 @@ export interface Setting {
   key: string;
   value: unknown;
 }
+
+export interface WeightSettings {
+  targetWeightKg: number;
+  startWeightKg: number | null;
+}
+
+export interface LifetimeTotals {
+  sessions: number;
+  sets: number;
+  kgLifted: number;
+  metersRowed: number;
+}

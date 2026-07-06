@@ -10,27 +10,46 @@ import { TabBar, type Screen } from "./components/TabBar";
 import {
   getLastWorkoutSession,
   getLatestExerciseLogs,
+  getLifetimeTotals,
   getTodayWorkoutSessions,
+  getWeightSettings,
   getXpTotal,
+  insertRowSessionWithXp,
+  insertWeighInWithXp,
   insertWorkoutSessionWithXp,
   listExerciseDefs,
+  listRowSessions,
+  listWeighIns,
   listWorkoutSessions,
   openPugIronDb,
   type PugIronDb
 } from "./db";
 import { labelTracking, localDateString } from "./lib/format";
 import { HistoryScreen } from "./screens/HistoryScreen";
+import { ProgressScreen } from "./screens/ProgressScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
 import { rankForXp } from "./logic/xp";
-import type { ExerciseDef, ExerciseLog, WorkoutSession } from "./types";
+import type {
+  ExerciseDef,
+  ExerciseLog,
+  LifetimeTotals,
+  RowSession,
+  WeighIn,
+  WeightSettings,
+  WorkoutSession
+} from "./types";
 
 type AppData = {
   exercises: ExerciseDef[];
+  lifetimeTotals: LifetimeTotals;
   latestLogs: Record<string, ExerciseLog>;
   lastSession: WorkoutSession | null;
+  rowSessions: RowSession[];
   sessions: WorkoutSession[];
   todaySessions: WorkoutSession[];
+  weighIns: WeighIn[];
+  weightSettings: WeightSettings;
   xpTotal: number;
 };
 
@@ -49,12 +68,26 @@ function PugIronApp() {
 
   const loadAppData = useCallback(async (database: PugIronDb) => {
     const today = localDateString(new Date());
-    const [exercises, sessions, lastSession, todaySessions, xpTotal] = await Promise.all([
+    const [
+      exercises,
+      sessions,
+      lastSession,
+      todaySessions,
+      xpTotal,
+      rowSessions,
+      weighIns,
+      weightSettings,
+      lifetimeTotals
+    ] = await Promise.all([
       listExerciseDefs(database),
       listWorkoutSessions(database),
       getLastWorkoutSession(database),
       getTodayWorkoutSessions(database, today),
-      getXpTotal(database)
+      getXpTotal(database),
+      listRowSessions(database),
+      listWeighIns(database),
+      getWeightSettings(database),
+      getLifetimeTotals(database)
     ]);
     const latestLogs = await getLatestExerciseLogs(
       database,
@@ -63,10 +96,14 @@ function PugIronApp() {
 
     setAppData({
       exercises,
+      lifetimeTotals,
       latestLogs,
       lastSession,
+      rowSessions,
       sessions,
       todaySessions,
+      weighIns,
+      weightSettings,
       xpTotal
     });
   }, []);
@@ -109,6 +146,30 @@ function PugIronApp() {
     [db, loadAppData]
   );
 
+  const handleLogRowSession = useCallback(
+    async (rowSession: Omit<RowSession, "id" | "xp">) => {
+      if (!db) {
+        return;
+      }
+
+      await insertRowSessionWithXp(db, rowSession);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
+  const handleLogWeighIn = useCallback(
+    async (weighIn: Omit<WeighIn, "id" | "xp">) => {
+      if (!db) {
+        return;
+      }
+
+      await insertWeighInWithXp(db, weighIn);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
   if (!fontsLoaded || !appData) {
     return (
       <View className="flex-1 bg-bg">
@@ -145,6 +206,8 @@ function PugIronApp() {
         <View className="flex-1 p-5">
           {renderScreen({
             appData,
+            onLogRowSession: handleLogRowSession,
+            onLogWeighIn: handleLogWeighIn,
             onStartWorkout: (workout) => setLoggerState({ workout, startedAt: Date.now() }),
             screen
           })}
@@ -175,30 +238,40 @@ export default function App() {
 
 function renderScreen({
   appData,
+  onLogRowSession,
+  onLogWeighIn,
   onStartWorkout,
   screen
 }: {
   appData: AppData;
+  onLogRowSession: (rowSession: Omit<RowSession, "id" | "xp">) => Promise<void>;
+  onLogWeighIn: (weighIn: Omit<WeighIn, "id" | "xp">) => Promise<void>;
   onStartWorkout: (workout: WorkoutSession["workout"]) => void;
   screen: Screen;
 }) {
   if (screen === "today") {
-    return <TodayScreen appData={appData} onStartWorkout={onStartWorkout} />;
+    return (
+      <TodayScreen
+        appData={appData}
+        onLogRowSession={onLogRowSession}
+        onLogWeighIn={onLogWeighIn}
+        onStartWorkout={onStartWorkout}
+      />
+    );
   }
 
   if (screen === "history") {
-    return <HistoryScreen sessions={appData.sessions} />;
+    return (
+      <HistoryScreen
+        rowSessions={appData.rowSessions}
+        sessions={appData.sessions}
+        weighIns={appData.weighIns}
+      />
+    );
   }
 
   if (screen === "progress") {
-    return (
-      <Panel eyebrow="progress scope" className="min-h-[180px]">
-        <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">Long view</Text>
-        <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
-          Charts and lifetime readouts use the local database.
-        </Text>
-      </Panel>
-    );
+    return <ProgressScreen appData={appData} />;
   }
 
   return (

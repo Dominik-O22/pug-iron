@@ -1,4 +1,4 @@
-import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
+import type { ExerciseDef, ExerciseLog, RowSession, SetEntry, WeighIn, WorkoutSession } from "../types";
 import type { ProgressionTarget } from "../logic/progression";
 import { weekStartString } from "./format";
 
@@ -18,6 +18,26 @@ export type RestState = {
   startedAt: number;
   durationMs: number;
 };
+
+export type HistoryEntry =
+  | {
+      date: string;
+      item: WorkoutSession;
+      kind: "workout";
+      sortValue: number;
+    }
+  | {
+      date: string;
+      item: RowSession;
+      kind: "rower";
+      sortValue: number;
+    }
+  | {
+      date: string;
+      item: WeighIn;
+      kind: "weigh-in";
+      sortValue: number;
+    };
 
 export function buildLoggedEntries(draftExercises: DraftExercise[]): ExerciseLog[] {
   return draftExercises
@@ -52,4 +72,53 @@ export function groupSessionsByWeek(sessions: WorkoutSession[]) {
   }
 
   return groups;
+}
+
+export function groupHistoryByWeek({
+  rowSessions,
+  sessions,
+  weighIns
+}: {
+  rowSessions: RowSession[];
+  sessions: WorkoutSession[];
+  weighIns: WeighIn[];
+}) {
+  const entries: HistoryEntry[] = [
+    ...sessions.map<HistoryEntry>((session) => ({
+      date: session.date,
+      item: session,
+      kind: "workout",
+      sortValue: session.startedAt
+    })),
+    ...rowSessions.map<HistoryEntry>((rowSession) => ({
+      date: rowSession.date,
+      item: rowSession,
+      kind: "rower",
+      sortValue: dateSortValue(rowSession.date, rowSession.id)
+    })),
+    ...weighIns.map<HistoryEntry>((weighIn) => ({
+      date: weighIn.date,
+      item: weighIn,
+      kind: "weigh-in",
+      sortValue: dateSortValue(weighIn.date, weighIn.id)
+    }))
+  ].sort((left, right) => right.sortValue - left.sortValue);
+  const groups: { entries: HistoryEntry[]; weekStart: string }[] = [];
+
+  for (const entry of entries) {
+    const weekStart = weekStartString(entry.date);
+    const lastGroup = groups[groups.length - 1];
+
+    if (lastGroup?.weekStart === weekStart) {
+      lastGroup.entries.push(entry);
+    } else {
+      groups.push({ weekStart, entries: [entry] });
+    }
+  }
+
+  return groups;
+}
+
+function dateSortValue(date: string, id = 0): number {
+  return Date.parse(`${date}T12:00:00.000Z`) + id;
 }
