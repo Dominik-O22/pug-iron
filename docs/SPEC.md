@@ -45,7 +45,8 @@ Bottom tab bar, four tabs. No router — a `screen` state value in the app root.
 ### 2.2 Workout logger (modal flow from Today)
 
 - One exercise at a time, big card, swipe/next navigation; also an overview list to jump.
-- Per set: weight (kg, 0.5 steps, prefilled from autopilot) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the 90 s rest countdown (visible, `expo-haptics` buzz at 0 s; screen kept awake during the logger via `expo-keep-awake`).
+- Warm-up checklist header before the first exercise: 4 min easy row + one light set of the session's first two exercises — tappable checkboxes, purely visual, never stored (§1).
+- Per set: weight (kg, stepper steps by the exercise's `incrementKg` — matching the dumbbell's real adjustment step; storage precision stays 0.5) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the 90 s rest countdown (visible, `expo-haptics` buzz at 0 s; screen kept awake during the logger via `expo-keep-awake`).
 - Autopilot line per exercise: e.g. *"Last: 12/11/10 @ 14 kg → hit 12s across, then 16 kg next time"*.
 - Finishing: summary (sets logged, any progression events), XP awarded, save to SQLite. Partial workouts save fine — logging 3 of 5 exercises is a valid session.
 - Abandoning mid-workout keeps a draft in memory only; explicit *Discard* available.
@@ -99,8 +100,9 @@ interface ExerciseDef {         // seeded, user-editable
   repLow: number
   repHigh: number
   loadType: 'weight' | 'assist' // 'assist' = band level 0–4, lower is harder, 0 = unassisted
-  incrementKg: number           // ignored for 'assist'
+  incrementKg: number           // ignored for 'assist'; also the weight-stepper step
   note: string
+  cues: string[]                // short form cues, shown expandable in the logger; seeded, editable
 }
 
 interface Setting { key: string; value: unknown }  // 'xpTotal', 'startWeightKg', 'targetWeightKg' (83), 'schemaVersion'
@@ -125,6 +127,8 @@ CREATE INDEX idx_weighins_date ON weighins(date);
 ```
 
 Set/rep detail stays as a JSON column (`entries`) — the app never queries inside a set, only whole sessions by date; keeps export/import trivially shaped like the domain types. Schema version via `PRAGMA user_version`; any change = bump + in-order migration steps on open. WAL mode on.
+
+Schema v2: adds `exercises.cues TEXT NOT NULL DEFAULT '[]'` (JSON string[]). Backup `schemaVersion` bumps to 2; v1 backups import via shim (missing `cues` → seed defaults for known ids, else `[]`).
 
 ## 4. Progression autopilot (double progression)
 

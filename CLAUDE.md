@@ -24,4 +24,5 @@ Personal Android workout tracker (React Native + Expo SDK 57) for a specific 6-m
 - All SQL lives in `src/db.ts`; the rest of the app speaks the domain types from SPEC §3.
 - Dates in storage: `'YYYY-MM-DD'` local-time strings; timestamps as epoch ms.
 - All numbers rendered in IBM Plex Mono with `fontVariant: ['tabular-nums']` (shared `<Num>` component).
-- Weights in kg with 0.5 steps; default progression increment 2.0 kg per dumbbell.
+- Weights stored in kg at 0.5 precision, but lift steppers step by the exercise's `incrementKg` (default 2.0 — dumbbell adjustment step); body-weight stepper steps 0.1.
+- Confirm dialogs are the themed in-app modal (`ConfirmDialog`), never native `Alert.alert`.

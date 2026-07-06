@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
+import { useDialog } from "../components/ConfirmDialog";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { Stepper } from "../components/Stepper";
@@ -44,6 +45,9 @@ export function SettingsScreen({
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [draftExercises, setDraftExercises] = useState(() => normalizeExerciseOrders(exercises));
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const { dialog, show } = useDialog();
+  const info = (eyebrow: string, title: string, body: string) =>
+    show({ eyebrow, title, body, buttons: [{ label: "OK", variant: "primary" }] });
   const groupedExercises = useMemo(
     () => ({
       A: draftExercises
@@ -71,7 +75,7 @@ export function SettingsScreen({
       const cacheDirectory = FileSystem.cacheDirectory;
 
       if (!cacheDirectory) {
-        Alert.alert("Backup could not be exported.", "Temporary storage is not available.");
+        info("backup", "Backup could not be exported.", "Temporary storage is not available.");
         return;
       }
 
@@ -82,7 +86,7 @@ export function SettingsScreen({
       await FileSystem.writeAsStringAsync(uri, serializeBackup(sourceData));
 
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert("Backup file created.", "Sharing is not available on this device.");
+        info("backup", "Backup file created.", "Sharing is not available on this device.");
         return;
       }
 
@@ -93,7 +97,7 @@ export function SettingsScreen({
       });
     } catch (error: unknown) {
       console.error("Failed to export backup", error);
-      Alert.alert("Backup could not be exported.", "Try again.");
+      info("backup", "Backup could not be exported.", "Give it another go.");
     } finally {
       setBusyAction(null);
     }
@@ -120,7 +124,7 @@ export function SettingsScreen({
       const asset = result.assets[0];
 
       if (!asset) {
-        Alert.alert("Backup could not be read.", "No file was selected.");
+        info("backup", "Backup could not be read.", "No file was selected.");
         return;
       }
 
@@ -128,7 +132,7 @@ export function SettingsScreen({
       const parsed = deserializeBackup(contents);
 
       if (!parsed.ok) {
-        Alert.alert("Import stopped.", parsed.error);
+        info("backup", "Import stopped.", parsed.error);
         return;
       }
 
@@ -139,7 +143,7 @@ export function SettingsScreen({
       });
     } catch (error: unknown) {
       console.error("Failed to read backup", error);
-      Alert.alert("Backup could not be read.", "Try again.");
+      info("backup", "Backup could not be read.", "Give it another go.");
     } finally {
       setBusyAction(null);
     }
@@ -156,10 +160,10 @@ export function SettingsScreen({
       await replaceAllDataWithBackup(db, backup);
       setImportPreview(null);
       await onDataChanged();
-      Alert.alert("Backup imported.", "Current data now matches the backup.");
+      info("backup", "Backup imported.", "Current data now matches the backup.");
     } catch (error: unknown) {
       console.error("Failed to import backup", error);
-      Alert.alert("Import could not finish.", "Current data stayed in place.");
+      info("backup", "Import could not finish.", "Current data stayed in place.");
     } finally {
       setBusyAction(null);
     }
@@ -171,16 +175,24 @@ export function SettingsScreen({
     }
 
     const normalized = normalizeExerciseOrders(
-      draftExercises.map((exercise) => ({ ...exercise, name: exercise.name.trim() }))
+      draftExercises.map((exercise) => ({
+        ...exercise,
+        name: exercise.name.trim(),
+        cues: exercise.cues.map((cue) => cue.trim()).filter((cue) => cue.length > 0)
+      }))
     );
 
     if (normalized.some((exercise) => exercise.name.length === 0)) {
-      Alert.alert("Exercise needs a name.", "Add a name before saving.");
+      info("exercise editor", "Exercise needs a name.", "Add a name before saving.");
       return;
     }
 
     if (normalized.some((exercise) => exercise.repHigh < exercise.repLow)) {
-      Alert.alert("Rep range needs a top value.", "Set the high rep value at or above the low value.");
+      info(
+        "exercise editor",
+        "Rep range needs a top value.",
+        "Set the high rep value at or above the low value."
+      );
       return;
     }
 
@@ -190,10 +202,10 @@ export function SettingsScreen({
       await updateExerciseDefs(db, normalized);
       setDraftExercises(normalized);
       await onDataChanged();
-      Alert.alert("Exercises saved.", "Plan edits are ready.");
+      info("exercise editor", "Exercises saved.", "Plan edits are ready.");
     } catch (error: unknown) {
       console.error("Failed to save exercises", error);
-      Alert.alert("Exercises could not be saved.", "Try again.");
+      info("exercise editor", "Exercises could not be saved.", "Give it another go.");
     } finally {
       setBusyAction(null);
     }
@@ -238,18 +250,28 @@ export function SettingsScreen({
       return;
     }
 
-    Alert.alert("Wipe all data?", "This removes workouts, rows, weigh-ins, and exercise edits.", [
-      { text: "Keep data", style: "cancel" },
-      {
-        onPress: () =>
-          Alert.alert("Wipe now?", "The seed plan and settings will be restored.", [
-            { text: "Keep data", style: "cancel" },
-            { text: "Wipe data", style: "destructive", onPress: () => void wipeData() }
-          ]),
-        style: "destructive",
-        text: "Continue"
-      }
-    ]);
+    show({
+      eyebrow: "danger zone",
+      title: "Wipe all data?",
+      body: "This removes workouts, rows, weigh-ins, and exercise edits.",
+      buttons: [
+        { label: "Keep data", variant: "secondary" },
+        {
+          label: "Continue",
+          variant: "danger",
+          onPress: () =>
+            show({
+              eyebrow: "danger zone",
+              title: "Wipe now?",
+              body: "The seed plan and settings will be restored.",
+              buttons: [
+                { label: "Keep data", variant: "secondary" },
+                { label: "Wipe data", variant: "danger", onPress: () => void wipeData() }
+              ]
+            })
+        }
+      ]
+    });
   }
 
   async function wipeData() {
@@ -259,17 +281,18 @@ export function SettingsScreen({
       await wipeAllDataAndReseed(db);
       setImportPreview(null);
       await onDataChanged();
-      Alert.alert("Data wiped.", "The seed plan is ready.");
+      info("danger zone", "Data wiped.", "The seed plan is ready.");
     } catch (error: unknown) {
       console.error("Failed to wipe data", error);
-      Alert.alert("Data could not be wiped.", "Try again.");
+      info("danger zone", "Data could not be wiped.", "Give it another go.");
     } finally {
       setBusyAction(null);
     }
   }
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+    <>
+      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
       <Panel eyebrow="backup">
         <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Backup</Text>
         <View className="mt-5 gap-3">
@@ -337,7 +360,9 @@ export function SettingsScreen({
           variant="danger"
         />
       </Panel>
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 
@@ -532,6 +557,63 @@ function EditableExerciseCard({
         unit="kg"
         value={exercise.incrementKg}
       />
+
+      <CuesEditor exercise={exercise} onUpdate={onUpdate} />
+    </View>
+  );
+}
+
+function CuesEditor({
+  exercise,
+  onUpdate
+}: {
+  exercise: ExerciseDef;
+  onUpdate: (exerciseId: string, updater: (exercise: ExerciseDef) => ExerciseDef) => void;
+}) {
+  return (
+    <View className="gap-3">
+      <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+        form cues
+      </Text>
+      {exercise.cues.map((cue, index) => (
+        <View className="flex-row items-center gap-3" key={index}>
+          <TextInput
+            accessibilityLabel={`${exercise.name} cue ${index + 1}`}
+            className="min-h-[56px] flex-1 rounded-lg border border-line bg-bg px-4 py-3 font-barlow text-[16px] leading-[22px] text-text"
+            onChangeText={(text) =>
+              onUpdate(exercise.id, (current) => ({
+                ...current,
+                cues: current.cues.map((value, valueIndex) => (valueIndex === index ? text : value))
+              }))
+            }
+            placeholder="Short form cue"
+            placeholderTextColor={tokens.colors.textDim}
+            value={cue}
+          />
+          <Pressable
+            accessibilityLabel={`Remove ${exercise.name} cue ${index + 1}`}
+            accessibilityRole="button"
+            className="min-h-[56px] min-w-[56px] items-center justify-center rounded-lg border border-line bg-bg"
+            onPress={() =>
+              onUpdate(exercise.id, (current) => ({
+                ...current,
+                cues: current.cues.filter((_, valueIndex) => valueIndex !== index)
+              }))
+            }
+          >
+            <Text className="font-barlow-bold text-[18px] text-danger">✕</Text>
+          </Pressable>
+        </View>
+      ))}
+      <Pressable
+        accessibilityRole="button"
+        className="min-h-[56px] items-center justify-center rounded-lg border border-line bg-bg px-4"
+        onPress={() =>
+          onUpdate(exercise.id, (current) => ({ ...current, cues: [...current.cues, ""] }))
+        }
+      >
+        <Text className="font-barlow-bold text-[16px] uppercase text-text">Add cue</Text>
+      </Pressable>
     </View>
   );
 }

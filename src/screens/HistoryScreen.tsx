@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { useDialog, type DialogOptions } from "../components/ConfirmDialog";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { Stepper } from "../components/Stepper";
@@ -363,8 +364,13 @@ function HistoryDetail({
           ...(typeof entry.item.meters === "number" ? [{ unit: "m", value: entry.item.meters }] : []),
           { unit: "XP", value: `+${entry.item.xp}` }
         ]}
+        confirmTitle="Delete this row?"
         onBack={onBack}
-        onDelete={() => confirmSimpleDelete("Delete this row?", onDeleteRowSession, entry.item.id)}
+        onConfirmDelete={() => {
+          if (typeof entry.item.id === "number") {
+            void onDeleteRowSession(entry.item.id);
+          }
+        }}
         title="Rower session"
       />
     );
@@ -378,8 +384,13 @@ function HistoryDetail({
         { unit: "kg", value: formatWeight(entry.item.kg) },
         ...(entry.item.xp > 0 ? [{ unit: "XP", value: `+${entry.item.xp}` }] : [])
       ]}
+      confirmTitle="Delete this weigh-in?"
       onBack={onBack}
-      onDelete={() => confirmSimpleDelete("Delete this weigh-in?", onDeleteWeighIn, entry.item.id)}
+      onConfirmDelete={() => {
+        if (typeof entry.item.id === "number") {
+          void onDeleteWeighIn(entry.item.id);
+        }
+      }}
       title="Weigh-in"
     />
   );
@@ -403,9 +414,11 @@ function WorkoutSessionDetail({
   const progressionNames = session.progressionEvents.map(
     (exerciseId) => exerciseById.get(exerciseId)?.name ?? exerciseId
   );
+  const { dialog, show } = useDialog();
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+    <>
+      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
       <BackButton onPress={onBack} />
 
       <Panel eyebrow="workout detail">
@@ -458,34 +471,40 @@ function WorkoutSessionDetail({
         <Pressable
           accessibilityRole="button"
           className="min-h-[56px] flex-1 items-center justify-center rounded-lg border border-danger bg-panel-2 px-4"
-          onPress={() => confirmWorkoutDelete(session.id, onDelete)}
+          onPress={() => showWorkoutDeleteConfirm(show, session.id, onDelete)}
         >
           <Text className="font-barlow-bold text-[16px] uppercase text-danger">Delete</Text>
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 
 function SimpleHistoryDetail({
   badge,
+  confirmTitle,
   date,
   metrics,
   onBack,
-  onDelete,
+  onConfirmDelete,
   title
 }: {
   badge: string;
+  confirmTitle: string;
   date: string;
   metrics: Array<{ unit: string; value: number | string }>;
   onBack: () => void;
-  onDelete: () => void;
+  onConfirmDelete: () => void;
   title: string;
 }) {
   const parts = dateParts(date);
+  const { dialog, show } = useDialog();
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+    <>
+      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
       <BackButton onPress={onBack} />
       <Panel eyebrow="entry detail">
         <View className="flex-row items-start justify-between gap-4">
@@ -509,11 +528,23 @@ function SimpleHistoryDetail({
       <Pressable
         accessibilityRole="button"
         className="min-h-[56px] items-center justify-center rounded-lg border border-danger bg-panel-2 px-4"
-        onPress={onDelete}
+        onPress={() =>
+          show({
+            eyebrow: "entry detail",
+            title: confirmTitle,
+            body: "The entry leaves History. XP stays as earned.",
+            buttons: [
+              { label: "Keep", variant: "secondary" },
+              { label: "Delete", variant: "danger", onPress: onConfirmDelete }
+            ]
+          })
+        }
       >
         <Text className="font-barlow-bold text-[16px] uppercase text-danger">Delete</Text>
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 
@@ -530,6 +561,7 @@ function SessionEditor({
 }) {
   const [entries, setEntries] = useState<ExerciseLog[]>(session.entries);
   const [saving, setSaving] = useState(false);
+  const { dialog, show } = useDialog();
 
   async function save() {
     if (typeof session.id !== "number" || saving) {
@@ -542,7 +574,12 @@ function SessionEditor({
       await onSave({ ...session, entries, id: session.id });
     } catch (error: unknown) {
       console.error("Failed to update workout session", error);
-      Alert.alert("Workout could not be updated.", "Try again.");
+      show({
+        eyebrow: "edit workout",
+        title: "Workout could not be updated.",
+        body: "Give it another go.",
+        buttons: [{ label: "OK", variant: "primary" }]
+      });
       setSaving(false);
     }
   }
@@ -565,7 +602,8 @@ function SessionEditor({
   }
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+    <>
+      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
       <BackButton onPress={onCancel} />
       <Panel eyebrow="edit workout">
         <Text className="font-barlow-bold text-[32px] uppercase leading-[36px] text-text">
@@ -598,7 +636,7 @@ function SessionEditor({
                     label={exercise?.loadType === "assist" ? "Assist level" : "Weight"}
                     min={0}
                     onChange={(weight) => updateSet(entryIndex, setIndex, { weight })}
-                    step={exercise?.loadType === "assist" ? 1 : 0.5}
+                    step={exercise?.loadType === "assist" ? 1 : exercise?.incrementKg ?? 2}
                     unit={exercise?.loadType === "assist" ? "band" : "kg"}
                     value={set.weight}
                   />
@@ -640,7 +678,9 @@ function SessionEditor({
           </Text>
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 
@@ -762,7 +802,8 @@ function BackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function confirmWorkoutDelete(
+function showWorkoutDeleteConfirm(
+  show: (options: DialogOptions) => void,
   sessionId: number | undefined,
   onDelete: (sessionId: number) => Promise<void>
 ) {
@@ -770,31 +811,26 @@ function confirmWorkoutDelete(
     return;
   }
 
-  Alert.alert("Delete this workout?", "This removes the session entry. XP stays as earned.", [
-    { text: "Keep", style: "cancel" },
-    {
-      onPress: () =>
-        Alert.alert("Delete workout now?", "The entry will be removed from History.", [
-          { text: "Keep", style: "cancel" },
-          { text: "Delete", style: "destructive", onPress: () => void onDelete(sessionId) }
-        ]),
-      style: "destructive",
-      text: "Continue"
-    }
-  ]);
-}
-
-function confirmSimpleDelete(
-  title: string,
-  onDelete: (id: number) => Promise<void>,
-  id: number | undefined
-) {
-  if (typeof id !== "number") {
-    return;
-  }
-
-  Alert.alert(title, "The entry will be removed from History. XP stays as earned.", [
-    { text: "Keep", style: "cancel" },
-    { text: "Delete", style: "destructive", onPress: () => void onDelete(id) }
-  ]);
+  show({
+    eyebrow: "workout detail",
+    title: "Delete this workout?",
+    body: "This removes the session entry. XP stays as earned.",
+    buttons: [
+      { label: "Keep", variant: "secondary" },
+      {
+        label: "Continue",
+        variant: "danger",
+        onPress: () =>
+          show({
+            eyebrow: "workout detail",
+            title: "Delete workout now?",
+            body: "The entry leaves History for good.",
+            buttons: [
+              { label: "Keep", variant: "secondary" },
+              { label: "Delete", variant: "danger", onPress: () => void onDelete(sessionId) }
+            ]
+          })
+      }
+    ]
+  });
 }

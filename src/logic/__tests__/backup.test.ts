@@ -43,13 +43,14 @@ const sourceData: BackupSourceData = {
       repHigh: 12,
       loadType: "weight",
       incrementKg: 2,
-      note: "Feet planted"
+      note: "Feet planted",
+      cues: ["Shoulder blades pinned back", "Lower to mid-chest, full range"]
     }
   ],
   settings: [
     { key: "xpTotal", value: 175 },
     { key: "targetWeightKg", value: 83 },
-    { key: "schemaVersion", value: 1 }
+    { key: "schemaVersion", value: 2 }
   ]
 };
 
@@ -80,11 +81,11 @@ describe("backup serialization", () => {
 
     const wrongVersion = validateBackupPayload({
       ...buildBackupPayload(sourceData, exportedAt),
-      schemaVersion: 2
+      schemaVersion: 3
     });
 
     expect(wrongVersion.ok).toBe(false);
-    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 2");
+    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 3");
   });
 
   it("rejects malformed records with a plain-language error", () => {
@@ -165,5 +166,82 @@ describe("backup serialization", () => {
       settings: 4,
       weighins: 1
     });
+  });
+
+  it("imports a v1 backup by shimming missing cues and bumping the schema version", () => {
+    const result = deserializeBackup(
+      JSON.stringify({
+        app: BACKUP_APP,
+        schemaVersion: 1,
+        exportedAt: "2026-07-06T10:30:00.000Z",
+        sessions: [],
+        rows: [],
+        weighins: [],
+        exercises: [
+          {
+            id: "goblet-squat",
+            name: "Goblet squat",
+            workout: "A",
+            order: 1,
+            sets: 3,
+            repLow: 8,
+            repHigh: 12,
+            loadType: "weight",
+            incrementKg: 2,
+            note: "Move to two-DB front squat when one DB feels light"
+          },
+          {
+            id: "custom-move",
+            name: "Custom move",
+            workout: "A",
+            order: 2,
+            sets: 3,
+            repLow: 8,
+            repHigh: 12,
+            loadType: "weight",
+            incrementKg: 2,
+            note: ""
+          }
+        ],
+        settings: [{ key: "schemaVersion", value: 1 }]
+      })
+    );
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.backup.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      // Known seed id gets its default cues; unknown id falls back to an empty list.
+      expect(result.backup.exercises[0].cues).toEqual([
+        "Elbows inside knees at the bottom",
+        "Heels planted, chest tall",
+        "Control down, drive up"
+      ]);
+      expect(result.backup.exercises[1].cues).toEqual([]);
+      expect(result.backup.settings).toEqual([{ key: "schemaVersion", value: BACKUP_SCHEMA_VERSION }]);
+    }
+  });
+
+  it("round-trips v2 cues without change", () => {
+    const result = deserializeBackup(serializeBackup(sourceData, exportedAt));
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.backup.exercises[0].cues).toEqual([
+        "Shoulder blades pinned back",
+        "Lower to mid-chest, full range"
+      ]);
+    }
+  });
+
+  it("rejects a v2 exercise whose cues are not an array of strings", () => {
+    const invalidCues = validateBackupPayload({
+      ...buildBackupPayload(sourceData, exportedAt),
+      exercises: [{ ...sourceData.exercises[0], cues: ["ok", 3] }]
+    });
+
+    expect(invalidCues.ok).toBe(false);
+    expect(invalidCues.ok ? "" : invalidCues.error).toBe("Exercise 1 has invalid form cues.");
   });
 });

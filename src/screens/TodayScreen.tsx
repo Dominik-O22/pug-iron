@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { useDialog } from "../components/ConfirmDialog";
 import { InstructionLine } from "../components/InstructionLine";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
@@ -40,6 +41,7 @@ export function TodayScreen({
   const [rowMeters, setRowMeters] = useState(0);
   const [weightKg, setWeightKg] = useState(latestWeighIn?.kg ?? 90);
   const [savingQuickAction, setSavingQuickAction] = useState<QuickAction>(null);
+  const { dialog, show } = useDialog();
 
   useEffect(() => {
     if (!quickAction && latestWeighIn) {
@@ -65,7 +67,12 @@ export function TodayScreen({
       setRowMeters(0);
     } catch (error: unknown) {
       console.error("Failed to save rower session", error);
-      Alert.alert("Rower session could not be saved.", "Try again.");
+      show({
+        eyebrow: "quick log",
+        title: "Rower session could not be saved.",
+        body: "Give it another go.",
+        buttons: [{ label: "OK", variant: "primary" }]
+      });
     } finally {
       setSavingQuickAction(null);
     }
@@ -86,14 +93,20 @@ export function TodayScreen({
       setQuickAction(null);
     } catch (error: unknown) {
       console.error("Failed to save weigh-in", error);
-      Alert.alert("Weigh-in could not be saved.", "Try again.");
+      show({
+        eyebrow: "quick log",
+        title: "Weigh-in could not be saved.",
+        body: "Give it another go.",
+        buttons: [{ label: "OK", variant: "primary" }]
+      });
     } finally {
       setSavingQuickAction(null);
     }
   }
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+    <>
+      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
       {hasLoggedToday ? (
         <Panel eyebrow="today saved">
           <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">
@@ -187,7 +200,9 @@ export function TodayScreen({
           ) : null}
         </View>
       </Panel>
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 

@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useDialog } from "../components/ConfirmDialog";
 import { InstructionLine } from "../components/InstructionLine";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { RestTimer } from "../components/RestTimer";
 import { Stepper } from "../components/Stepper";
-import { formatVolume, formatWeight, labelTracking, localDateString } from "../lib/format";
+import {
+  abbreviateExerciseName,
+  formatVolume,
+  formatWeight,
+  labelTracking,
+  localDateString
+} from "../lib/format";
 import {
   buildLoggedEntries,
   countLoggedSets,
@@ -74,7 +81,10 @@ export function WorkoutLoggerModal({
   const [setIndexes, setSetIndexes] = useState(() => exercises.map(() => 0));
   const [mode, setMode] = useState<"logging" | "summary" | "saving">("logging");
   const [rest, setRest] = useState<RestState | null>(null);
+  const [formOpen, setFormOpen] = useState<boolean[]>(() => exercises.map(() => false));
   const savingRef = useRef(false);
+  const { dialog, show } = useDialog();
+  const warmupExercises = useMemo(() => exercises.slice(0, 2), [exercises]);
   const loggedEntries = useMemo(() => buildLoggedEntries(draftExercises), [draftExercises]);
   const loggedSetCount = useMemo(() => countLoggedSets(loggedEntries), [loggedEntries]);
   const progressionEvents = useMemo(
@@ -150,11 +160,16 @@ export function WorkoutLoggerModal({
       return;
     }
 
-    Alert.alert("Discard this draft?", "Saved sessions are written only after the summary.", [
-      { text: "Keep lifting", style: "cancel" },
-      { text: "Discard", style: "destructive", onPress: onClose }
-    ]);
-  }, [onClose]);
+    show({
+      eyebrow: "workout logger",
+      title: "Discard this draft?",
+      body: "Saved sessions are written only after the summary.",
+      buttons: [
+        { label: "Keep lifting", variant: "secondary" },
+        { label: "Discard", variant: "danger", onPress: onClose }
+      ]
+    });
+  }, [onClose, show]);
 
   const saveSession = useCallback(async () => {
     // Synchronous guard: `mode` updates async, so a double-tap could otherwise insert twice.
@@ -180,7 +195,12 @@ export function WorkoutLoggerModal({
       await onSave(session);
     } catch (error: unknown) {
       console.error("Failed to save workout session", error);
-      Alert.alert("Session could not be saved.", "Try again.");
+      show({
+        eyebrow: "workout logger",
+        title: "Session could not be saved.",
+        body: "Give it another go.",
+        buttons: [{ label: "OK", variant: "primary" }]
+      });
       savingRef.current = false;
       setMode("summary");
     }
@@ -191,6 +211,7 @@ export function WorkoutLoggerModal({
     loggerState.workout,
     onSave,
     progressionEvents,
+    show,
     xpAwarded
   ]);
 
@@ -239,6 +260,8 @@ export function WorkoutLoggerModal({
           ) : (
             <>
               <ScrollView className="flex-1" contentContainerClassName="gap-4 p-5 pb-6">
+                <WarmupChecklist warmupExercises={warmupExercises} />
+
                 <ExerciseOverview
                   draftExercises={draftExercises}
                   exerciseIndex={exerciseIndex}
@@ -279,6 +302,18 @@ export function WorkoutLoggerModal({
                     />
                   </View>
 
+                  {activeDraft.exercise.cues.length > 0 ? (
+                    <FormCuesPanel
+                      cues={activeDraft.exercise.cues}
+                      onToggle={() =>
+                        setFormOpen((current) =>
+                          current.map((value, index) => (index === exerciseIndex ? !value : value))
+                        )
+                      }
+                      open={formOpen[exerciseIndex] ?? false}
+                    />
+                  ) : null}
+
                   <SetRows
                     activeSetIndex={activeSetIndex}
                     draftExercise={activeDraft}
@@ -295,7 +330,7 @@ export function WorkoutLoggerModal({
                       label={activeDraft.exercise.loadType === "assist" ? "Assist level" : "Weight"}
                       min={0}
                       onChange={(weight) => updateActiveSet({ weight })}
-                      step={activeDraft.exercise.loadType === "assist" ? 1 : 0.5}
+                      step={activeDraft.exercise.loadType === "assist" ? 1 : activeDraft.exercise.incrementKg}
                       unit={activeDraft.exercise.loadType === "assist" ? "band" : "kg"}
                       value={activeSet.weight}
                     />
@@ -355,8 +390,95 @@ export function WorkoutLoggerModal({
             </>
           )}
         </SafeAreaView>
+        {dialog}
       </View>
     </Modal>
+  );
+}
+
+function WarmupChecklist({ warmupExercises }: { warmupExercises: ExerciseDef[] }) {
+  const items = useMemo(
+    () => ["4 min easy row", ...warmupExercises.map((exercise) => `Light set · ${exercise.name}`)],
+    [warmupExercises]
+  );
+  const [checked, setChecked] = useState<boolean[]>(() => items.map(() => false));
+
+  return (
+    <Panel eyebrow="warm up">
+      <Text className="font-barlow text-[16px] leading-[22px] text-text-dim">
+        Optional. Tap what you have done.
+      </Text>
+      <View className="mt-4 gap-2">
+        {items.map((item, index) => {
+          const isChecked = checked[index] ?? false;
+
+          return (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isChecked }}
+              className="min-h-[56px] flex-row items-center gap-3 rounded-lg border border-line bg-panel-2 px-4"
+              key={item}
+              onPress={() =>
+                setChecked((current) =>
+                  current.map((value, valueIndex) => (valueIndex === index ? !value : value))
+                )
+              }
+            >
+              <View
+                className={`h-7 w-7 items-center justify-center rounded border ${
+                  isChecked ? "border-mint bg-mint" : "border-line bg-bg"
+                }`}
+              >
+                {isChecked ? <Text className="font-barlow-bold text-[16px] text-bg">✓</Text> : null}
+              </View>
+              <Text
+                className={`flex-1 font-barlow-semibold text-[16px] leading-[22px] ${
+                  isChecked ? "text-mint" : "text-text"
+                }`}
+              >
+                {item}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </Panel>
+  );
+}
+
+function FormCuesPanel({
+  cues,
+  onToggle,
+  open
+}: {
+  cues: string[];
+  onToggle: () => void;
+  open: boolean;
+}) {
+  return (
+    <View className="mt-4 rounded-lg border border-line bg-panel-2">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        className="min-h-[56px] flex-row items-center justify-between px-4"
+        onPress={onToggle}
+      >
+        <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+          form
+        </Text>
+        <Text className="font-mono-medium text-[16px] text-mint">{open ? "–" : "+"}</Text>
+      </Pressable>
+      {open ? (
+        <View className="gap-2 px-4 pb-4">
+          {cues.map((cue) => (
+            <View className="flex-row gap-2" key={cue}>
+              <Text className="font-barlow-semibold text-[16px] leading-[22px] text-mint">·</Text>
+              <Text className="flex-1 font-barlow text-[16px] leading-[22px] text-text">{cue}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -374,23 +496,34 @@ function ExerciseOverview({
       <View className="flex-row gap-2">
         {draftExercises.map((draft, index) => {
           const isActive = index === exerciseIndex;
-          const isComplete = draft.sets.every((set) => set.logged);
+          const loggedCount = draft.sets.filter((set) => set.logged).length;
+          const isComplete = loggedCount === draft.sets.length && draft.sets.length > 0;
+          const nameClass = isActive ? "text-mint" : "text-text-dim";
+          const progressClass = isActive || isComplete ? "text-mint" : "text-text-dim";
 
           return (
             <Pressable
               accessibilityRole="button"
-              className={`min-h-[56px] min-w-[56px] items-center justify-center rounded-lg border px-3 ${
+              className={`min-h-[56px] min-w-[64px] items-center justify-center rounded-lg border px-3 ${
                 isActive ? "border-mint bg-petrol" : "border-line bg-panel-2"
               }`}
               key={draft.exercise.id}
               onPress={() => onSelect(index)}
             >
-              <Text className={`font-barlow-bold text-[18px] ${isActive ? "text-mint" : "text-text"}`}>
-                {draft.exercise.workout}
+              <Text
+                className={`font-mono-medium text-[11px] uppercase ${nameClass}`}
+                style={labelTracking}
+              >
+                {abbreviateExerciseName(draft.exercise.name)}
               </Text>
-              <Num className={`text-[13px] ${isComplete ? "text-mint" : "text-text-dim"}`}>
-                {index + 1}
-              </Num>
+              <View className="mt-1 flex-row items-center gap-1">
+                <Num weight="medium" className={`text-[13px] ${progressClass}`}>
+                  {loggedCount}/{draft.sets.length}
+                </Num>
+                {isComplete ? (
+                  <Text className="font-barlow-semibold text-[13px] text-mint">✓</Text>
+                ) : null}
+              </View>
             </Pressable>
           );
         })}

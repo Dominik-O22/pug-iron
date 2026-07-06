@@ -1,3 +1,4 @@
+import { SEED_CUES_BY_ID } from "../plan";
 import type {
   ExerciseDef,
   ExerciseLog,
@@ -9,7 +10,8 @@ import type {
 } from "../types";
 
 export const BACKUP_APP = "pug-iron";
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
+const SUPPORTED_IMPORT_VERSIONS = [1, 2];
 
 export type BackupPayload = {
   app: typeof BACKUP_APP;
@@ -84,7 +86,7 @@ export function validateBackupPayload(value: unknown): BackupParseResult {
     return { error: "This backup was made for another app.", ok: false };
   }
 
-  if (record.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+  if (typeof record.schemaVersion !== "number" || !SUPPORTED_IMPORT_VERSIONS.includes(record.schemaVersion)) {
     return {
       error: `This backup uses schema version ${String(
         record.schemaVersion
@@ -92,6 +94,8 @@ export function validateBackupPayload(value: unknown): BackupParseResult {
       ok: false
     };
   }
+
+  const incomingVersion = record.schemaVersion;
 
   if (!isValidExportedAt(record.exportedAt)) {
     return { error: "Backup export time is missing or invalid.", ok: false };
@@ -101,6 +105,12 @@ export function validateBackupPayload(value: unknown): BackupParseResult {
 
   if (!arrays.ok) {
     return arrays;
+  }
+
+  // A v1 backup predates form cues; bring it to the current shape before validating.
+  if (incomingVersion === 1) {
+    arrays.exercises = arrays.exercises.map(shimV1Exercise);
+    arrays.settings = arrays.settings.map(shimV1Setting);
   }
 
   const validators: Array<[unknown[], (item: unknown, index: number) => string | null]> = [
@@ -143,6 +153,28 @@ export function countBackupRecords(backup: BackupPayload | BackupSourceData): Ba
     settings: backup.settings.length,
     weighins: backup.weighins.length
   };
+}
+
+function shimV1Exercise(value: unknown): unknown {
+  const record = asRecord(value);
+
+  if (!record || Object.prototype.hasOwnProperty.call(record, "cues")) {
+    return value;
+  }
+
+  const id = typeof record.id === "string" ? record.id : "";
+
+  return { ...record, cues: SEED_CUES_BY_ID[id] ?? [] };
+}
+
+function shimV1Setting(value: unknown): unknown {
+  const record = asRecord(value);
+
+  if (!record || record.key !== "schemaVersion") {
+    return value;
+  }
+
+  return { ...record, value: BACKUP_SCHEMA_VERSION };
 }
 
 function cloneWorkoutSession(session: WorkoutSession): WorkoutSession {
@@ -425,6 +457,10 @@ function validateExerciseDef(value: unknown, index: number): string | null {
 
   if (typeof record.note !== "string") {
     return `${label} has an invalid note.`;
+  }
+
+  if (!Array.isArray(record.cues) || !record.cues.every((cue) => typeof cue === "string")) {
+    return `${label} has invalid form cues.`;
   }
 
   return null;

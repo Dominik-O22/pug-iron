@@ -11,7 +11,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: "Move to two-DB front squat when one DB feels light"
+    note: "Move to two-DB front squat when one DB feels light",
+    cues: [
+      "Elbows inside knees at the bottom",
+      "Heels planted, chest tall",
+      "Control down, drive up"
+    ]
   },
   {
     id: "flat-db-press",
@@ -23,7 +28,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: "Feet planted, slight arch, full range"
+    note: "Feet planted, slight arch, full range",
+    cues: [
+      "Shoulder blades pinned back",
+      "Wrists stacked over elbows",
+      "Lower to mid-chest, full range"
+    ]
   },
   {
     id: "one-arm-row",
@@ -35,7 +45,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: "Per side, knee on bench"
+    note: "Per side, knee on bench",
+    cues: [
+      "Flat back, brace the core",
+      "Pull to the hip, not the chest",
+      "Squeeze the lat, control down"
+    ]
   },
   {
     id: "lateral-raise",
@@ -47,7 +62,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 15,
     loadType: "weight",
     incrementKg: 2.0,
-    note: "Light weight, strict"
+    note: "Light weight, strict",
+    cues: [
+      "Lead with the elbows",
+      "Stop at shoulder height",
+      "Slow negative, no swinging"
+    ]
   },
   {
     id: "hammer-curl",
@@ -59,7 +79,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: ""
+    note: "",
+    cues: [
+      "Elbows pinned to your sides",
+      "Neutral grip, thumbs up",
+      "No swinging, control down"
+    ]
   },
   {
     id: "db-rdl",
@@ -71,7 +96,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: "Hinge at hips, flat back"
+    note: "Hinge at hips, flat back",
+    cues: [
+      "Hinge at the hips, push them back",
+      "Flat back, soft knees",
+      "Bar close, feel the hamstrings"
+    ]
   },
   {
     id: "seated-oh-press",
@@ -83,7 +113,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: ""
+    note: "",
+    cues: [
+      "Brace the core, ribs down",
+      "Press straight up, not forward",
+      "Lower to ear height"
+    ]
   },
   {
     id: "pullup",
@@ -95,7 +130,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 10,
     loadType: "assist",
     incrementKg: 2.0,
-    note: ""
+    note: "",
+    cues: [
+      "Start from a full dead hang",
+      "Pull the elbows down and back",
+      "Chin over the bar, control down"
+    ]
   },
   {
     id: "incline-db-press",
@@ -107,7 +147,12 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: ""
+    note: "",
+    cues: [
+      "Bench around 30 degrees",
+      "Shoulder blades set back",
+      "Press up and slightly together"
+    ]
   },
   {
     id: "oh-triceps-ext",
@@ -119,6 +164,15 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repHigh: 12,
     loadType: "weight",
     incrementKg: 2.0,
-    note: ""
+    note: "",
+    cues: [
+      "Elbows in, point them forward",
+      "Full stretch at the bottom",
+      "Only the forearms move"
+    ]
   }
 ];
+
+export const SEED_CUES_BY_ID: Record<string, string[]> = Object.fromEntries(
+  EXERCISE_DEFS.map((exercise) => [exercise.id, exercise.cues])
+);

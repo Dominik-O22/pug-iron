@@ -16,7 +16,8 @@ const flatPress: ExerciseDef = {
   repHigh: 12,
   loadType: "weight",
   incrementKg: 2,
-  note: ""
+  note: "",
+  cues: []
 };
 
 const pullup: ExerciseDef = {
@@ -29,7 +30,8 @@ const pullup: ExerciseDef = {
   repHigh: 10,
   loadType: "assist",
   incrementKg: 2,
-  note: ""
+  note: "",
+  cues: []
 };
 
 function session(

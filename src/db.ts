@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
 
-import { EXERCISE_DEFS } from "./plan";
+import { EXERCISE_DEFS, SEED_CUES_BY_ID } from "./plan";
 import type { BackupPayload, BackupSourceData } from "./logic/backup";
 import { XP_EVENTS } from "./logic/xp";
 import type {
@@ -15,7 +15,7 @@ import type {
 } from "./types";
 
 const DATABASE_NAME = "pug-iron.db";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export type PugIronDb = SQLite.SQLiteDatabase;
 
@@ -40,6 +40,7 @@ type ExerciseRow = {
   load_type: string;
   increment_kg: number;
   note: string;
+  cues: string;
 };
 
 type SessionRow = {
@@ -84,7 +85,7 @@ type CountRow = {
 const DEFAULT_SETTINGS: Setting[] = [
   { key: "xpTotal", value: 0 },
   { key: "targetWeightKg", value: 83 },
-  { key: "schemaVersion", value: 1 }
+  { key: "schemaVersion", value: 2 }
 ];
 
 const CREATE_SCHEMA_SQL = `
@@ -96,7 +97,8 @@ CREATE TABLE rows      (id INTEGER PRIMARY KEY, date TEXT NOT NULL, minutes REAL
                         meters INTEGER, xp INTEGER NOT NULL);
 CREATE TABLE weighins  (id INTEGER PRIMARY KEY, date TEXT NOT NULL, kg REAL NOT NULL, xp INTEGER NOT NULL);
 CREATE TABLE exercises (id TEXT PRIMARY KEY, name TEXT, workout TEXT, ord INTEGER, sets INTEGER,
-                        rep_low INTEGER, rep_high INTEGER, load_type TEXT, increment_kg REAL, note TEXT);
+                        rep_low INTEGER, rep_high INTEGER, load_type TEXT, increment_kg REAL, note TEXT,
+                        cues TEXT NOT NULL DEFAULT '[]');
 CREATE TABLE settings  (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX idx_sessions_date ON sessions(date);
 CREATE INDEX idx_rows_date     ON rows(date);
@@ -104,8 +106,8 @@ CREATE INDEX idx_weighins_date ON weighins(date);
 `;
 
 const INSERT_EXERCISE_SQL = `
-INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING;
 `;
 
@@ -131,6 +133,20 @@ const migrationSteps: MigrationStep[] = [
       await seedDefaultSettings(db);
       await db.execAsync("PRAGMA user_version = 1;");
     }
+  },
+  {
+    from: 1,
+    to: 2,
+    run: async (db) => {
+      // Existing v1 installs lack the column; fresh installs already have it from CREATE_SCHEMA_SQL.
+      if (!(await columnExists(db, "exercises", "cues"))) {
+        await db.execAsync("ALTER TABLE exercises ADD COLUMN cues TEXT NOT NULL DEFAULT '[]';");
+      }
+
+      await backfillSeedCues(db);
+      await setSettingValue(db, "schemaVersion", 2);
+      await db.execAsync("PRAGMA user_version = 2;");
+    }
   }
 ];
 
@@ -146,7 +162,7 @@ export async function openPugIronDb(): Promise<PugIronDb> {
 
 export async function listExerciseDefs(db: PugIronDb): Promise<ExerciseDef[]> {
   const rows = await db.getAllAsync<ExerciseRow>(
-    `SELECT id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note
+    `SELECT id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues
      FROM exercises
      ORDER BY workout ASC, ord ASC;`
   );
@@ -495,7 +511,7 @@ export async function updateExerciseDefs(
       await db.runAsync(
         `UPDATE exercises
          SET name = ?, workout = ?, ord = ?, sets = ?, rep_low = ?, rep_high = ?,
-             load_type = ?, increment_kg = ?, note = ?
+             load_type = ?, increment_kg = ?, note = ?, cues = ?
          WHERE id = ?;`,
         [
           exercise.name,
@@ -507,6 +523,7 @@ export async function updateExerciseDefs(
           exercise.loadType,
           exercise.incrementKg,
           exercise.note,
+          JSON.stringify(exercise.cues),
           exercise.id
         ]
       );
@@ -587,8 +604,26 @@ async function seedExerciseDefs(db: PugIronDb, exerciseDefs: ExerciseDef[]): Pro
       exercise.repHigh,
       exercise.loadType,
       exercise.incrementKg,
-      exercise.note
+      exercise.note,
+      JSON.stringify(exercise.cues)
     ]);
+  }
+}
+
+async function columnExists(db: PugIronDb, table: string, column: string): Promise<boolean> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table});`);
+
+  return columns.some((entry) => entry.name === column);
+}
+
+async function backfillSeedCues(db: PugIronDb): Promise<void> {
+  for (const [id, cues] of Object.entries(SEED_CUES_BY_ID)) {
+    await db.runAsync(
+      `UPDATE exercises
+       SET cues = ?
+       WHERE id = ? AND (cues IS NULL OR cues = '' OR cues = '[]');`,
+      [JSON.stringify(cues), id]
+    );
   }
 }
 
@@ -684,8 +719,8 @@ async function insertExerciseDefFromBackup(
   exercise: ExerciseDef
 ): Promise<void> {
   await db.runAsync(
-    `INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       exercise.id,
       exercise.name,
@@ -696,7 +731,8 @@ async function insertExerciseDefFromBackup(
       exercise.repHigh,
       exercise.loadType,
       exercise.incrementKg,
-      exercise.note
+      exercise.note,
+      JSON.stringify(exercise.cues)
     ]
   );
 }
@@ -744,8 +780,23 @@ function mapExerciseRow(row: ExerciseRow): ExerciseDef {
     repHigh: row.rep_high,
     loadType: row.load_type === "assist" ? "assist" : "weight",
     incrementKg: row.increment_kg,
-    note: row.note
+    note: row.note,
+    cues: parseCues(row.cues)
   };
+}
+
+function parseCues(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapSessionRow(row: SessionRow): WorkoutSession {

@@ -45,6 +45,7 @@ export interface ExerciseDef {
   loadType: "weight" | "assist";
   incrementKg: number;
   note: string;
+  cues: string[];
 }
 
 export interface Setting {
