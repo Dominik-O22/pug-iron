@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+
+# Capacitor / Android (generated; android/ itself is committed once created)
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
