@@ -1,8 +1,10 @@
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { InstructionLine } from "../components/InstructionLine";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { labelTracking } from "../lib/format";
+import { deriveProgressionTarget, type ProgressionTarget } from "../logic/progression";
 import { nextWorkout } from "../logic/workouts";
 import type { ExerciseDef, ExerciseLog, WorkoutSession } from "../types";
 
@@ -53,9 +55,11 @@ export function TodayScreen({
         </View>
 
         <View className="mt-5 gap-3">
-          {exercises.map((exercise) => (
-            <ExerciseSchemeRow exercise={exercise} key={exercise.id} />
-          ))}
+          {exercises.map((exercise) => {
+            const target = deriveProgressionTarget(exercise, appData.latestLogs[exercise.id]);
+
+            return <ExerciseSchemeRow exercise={exercise} key={exercise.id} target={target} />;
+          })}
         </View>
 
         <View className="mt-5 rounded-lg border border-line bg-panel-2 p-4">
@@ -87,11 +91,22 @@ export function TodayScreen({
   );
 }
 
-function ExerciseSchemeRow({ exercise }: { exercise: ExerciseDef }) {
+function ExerciseSchemeRow({
+  exercise,
+  target
+}: {
+  exercise: ExerciseDef;
+  target: ProgressionTarget;
+}) {
   return (
     <View className="flex-row items-center justify-between gap-3 rounded-lg border border-line bg-panel-2 p-4">
       <View className="flex-1">
         <Text className="font-barlow-semibold text-[18px] leading-[22px] text-text">{exercise.name}</Text>
+        <InstructionLine
+          className="mt-1 text-[15px] leading-[20px] text-text"
+          instruction={target.instruction}
+          numberClassName="text-[15px] text-text"
+        />
         {exercise.note ? (
           <Text className="mt-1 font-barlow text-[13px] leading-[18px] text-text-dim">
             {exercise.note}

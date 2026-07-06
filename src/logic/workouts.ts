@@ -1,13 +1,6 @@
-import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
+import type { ExerciseLog, WorkoutSession } from "../types";
 
 export type WorkoutCode = WorkoutSession["workout"];
-
-export type SetPrefill = {
-  hasHistory: boolean;
-  sets: SetEntry[];
-};
-
-type PrefillExercise = Pick<ExerciseDef, "sets" | "repLow">;
 
 export function nextWorkout(lastSession?: Pick<WorkoutSession, "workout"> | null): WorkoutCode {
   if (!lastSession) {
@@ -15,35 +8,6 @@ export function nextWorkout(lastSession?: Pick<WorkoutSession, "workout"> | null
   }
 
   return lastSession.workout === "A" ? "B" : "A";
-}
-
-export function deriveSetPrefill(
-  exercise: PrefillExercise,
-  previousLog?: ExerciseLog | null
-): SetPrefill {
-  if (!previousLog || previousLog.sets.length === 0) {
-    return {
-      hasHistory: false,
-      sets: Array.from({ length: exercise.sets }, () => ({
-        weight: 0,
-        reps: exercise.repLow
-      }))
-    };
-  }
-
-  const fallbackSet = previousLog.sets[previousLog.sets.length - 1];
-
-  return {
-    hasHistory: true,
-    sets: Array.from({ length: exercise.sets }, (_, index) => {
-      const previousSet = previousLog.sets[index] ?? fallbackSet;
-
-      return {
-        weight: previousSet.weight,
-        reps: previousSet.reps
-      };
-    })
-  };
 }
 
 export function calculateExerciseVolume(log: ExerciseLog): number {

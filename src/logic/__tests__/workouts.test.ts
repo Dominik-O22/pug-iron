@@ -1,18 +1,5 @@
-import { calculateExerciseVolume, calculateSessionVolume, deriveSetPrefill, nextWorkout } from "../workouts";
-import type { ExerciseDef, ExerciseLog, WorkoutSession } from "../../types";
-
-const baseExercise: ExerciseDef = {
-  id: "flat-db-press",
-  name: "Flat dumbbell bench press",
-  workout: "A",
-  order: 2,
-  sets: 3,
-  repLow: 8,
-  repHigh: 12,
-  loadType: "weight",
-  incrementKg: 2,
-  note: ""
-};
+import { calculateExerciseVolume, calculateSessionVolume, nextWorkout } from "../workouts";
+import type { WorkoutSession } from "../../types";
 
 describe("nextWorkout", () => {
   it("starts with workout A when there is no session history", () => {
@@ -36,38 +23,6 @@ describe("nextWorkout", () => {
     };
 
     expect(nextWorkout(todaySession)).toBe("B");
-  });
-});
-
-describe("deriveSetPrefill", () => {
-  it("uses zero weight and the low rep target when there is no history", () => {
-    expect(deriveSetPrefill(baseExercise, null)).toEqual({
-      hasHistory: false,
-      sets: [
-        { weight: 0, reps: 8 },
-        { weight: 0, reps: 8 },
-        { weight: 0, reps: 8 }
-      ]
-    });
-  });
-
-  it("copies the previous exercise log and repeats the last known set if needed", () => {
-    const previousLog: ExerciseLog = {
-      exerciseId: "flat-db-press",
-      sets: [
-        { weight: 18, reps: 10 },
-        { weight: 18, reps: 9 }
-      ]
-    };
-
-    expect(deriveSetPrefill(baseExercise, previousLog)).toEqual({
-      hasHistory: true,
-      sets: [
-        { weight: 18, reps: 10 },
-        { weight: 18, reps: 9 },
-        { weight: 18, reps: 9 }
-      ]
-    });
   });
 });
 

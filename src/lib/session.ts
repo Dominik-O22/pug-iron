@@ -1,4 +1,5 @@
 import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
+import type { ProgressionTarget } from "../logic/progression";
 import { weekStartString } from "./format";
 
 export type DraftSet = SetEntry & {
@@ -8,6 +9,8 @@ export type DraftSet = SetEntry & {
 export type DraftExercise = {
   exercise: ExerciseDef;
   hasHistory: boolean;
+  instruction: string;
+  progressionTarget: ProgressionTarget;
   sets: DraftSet[];
 };
 

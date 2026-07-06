@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { InstructionLine } from "../components/InstructionLine";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { RestTimer } from "../components/RestTimer";
@@ -15,7 +16,12 @@ import {
   type DraftExercise,
   type RestState
 } from "../lib/session";
-import { calculateSessionVolume, deriveSetPrefill } from "../logic/workouts";
+import {
+  detectProgressionEvents,
+  deriveProgressionTarget,
+  type ProgressionEventTarget
+} from "../logic/progression";
+import { calculateSessionVolume } from "../logic/workouts";
 import { XP_EVENTS } from "../logic/xp";
 import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
 
@@ -24,7 +30,13 @@ export type LoggerState = {
   workout: WorkoutSession["workout"];
 };
 
+type ProgressionSummaryEvent = {
+  exerciseName: string;
+  target: ProgressionEventTarget;
+};
+
 const REST_DURATION_MS = 90000;
+const PROGRESSION_MOMENT_MS = 500;
 
 export function WorkoutLoggerModal({
   exercises,
@@ -43,12 +55,18 @@ export function WorkoutLoggerModal({
 
   const [draftExercises, setDraftExercises] = useState<DraftExercise[]>(() =>
     exercises.map((exercise) => {
-      const prefill = deriveSetPrefill(exercise, latestLogs[exercise.id]);
+      const progressionTarget = deriveProgressionTarget(exercise, latestLogs[exercise.id]);
 
       return {
         exercise,
-        hasHistory: prefill.hasHistory,
-        sets: prefill.sets.map((set) => ({ ...set, logged: false }))
+        hasHistory: progressionTarget.hasHistory,
+        instruction: progressionTarget.instruction,
+        progressionTarget,
+        sets: progressionTarget.sets.map((set) => ({
+          weight: set.weight ?? 0,
+          reps: set.reps,
+          logged: false
+        }))
       };
     })
   );
@@ -59,6 +77,24 @@ export function WorkoutLoggerModal({
   const savingRef = useRef(false);
   const loggedEntries = useMemo(() => buildLoggedEntries(draftExercises), [draftExercises]);
   const loggedSetCount = useMemo(() => countLoggedSets(loggedEntries), [loggedEntries]);
+  const progressionEvents = useMemo(
+    () => detectProgressionEvents(exercises, latestLogs, loggedEntries),
+    [exercises, latestLogs, loggedEntries]
+  );
+  const progressionSummaryEvents = useMemo(() => {
+    const eventIds = new Set(progressionEvents);
+
+    return draftExercises.flatMap<ProgressionSummaryEvent>((draft) => {
+      const eventTarget = draft.progressionTarget.progressionEvent;
+
+      if (!eventIds.has(draft.exercise.id) || !eventTarget) {
+        return [];
+      }
+
+      return [{ exerciseName: draft.exercise.name, target: eventTarget }];
+    });
+  }, [draftExercises, progressionEvents]);
+  const xpAwarded = XP_EVENTS.workoutSessionSaved + progressionEvents.length * XP_EVENTS.progressionEvent;
   const activeDraft = draftExercises[exerciseIndex];
   const activeSetIndex = Math.min(setIndexes[exerciseIndex] ?? 0, activeDraft.sets.length - 1);
   const activeSet = activeDraft.sets[activeSetIndex];
@@ -134,8 +170,8 @@ export function WorkoutLoggerModal({
       entries: loggedEntries,
       startedAt: loggerState.startedAt,
       finishedAt,
-      xp: XP_EVENTS.workoutSessionSaved,
-      progressionEvents: []
+      xp: xpAwarded,
+      progressionEvents
     };
 
     setMode("saving");
@@ -148,7 +184,15 @@ export function WorkoutLoggerModal({
       savingRef.current = false;
       setMode("summary");
     }
-  }, [loggedEntries, loggedSetCount, loggerState.startedAt, loggerState.workout, onSave]);
+  }, [
+    loggedEntries,
+    loggedSetCount,
+    loggerState.startedAt,
+    loggerState.workout,
+    onSave,
+    progressionEvents,
+    xpAwarded
+  ]);
 
   return (
     <Modal animationType="slide" onRequestClose={confirmDiscard} presentationStyle="fullScreen" visible>
@@ -189,6 +233,8 @@ export function WorkoutLoggerModal({
               mode={mode}
               onBack={() => setMode("logging")}
               onSave={saveSession}
+              progressionEvents={progressionSummaryEvents}
+              xpAwarded={xpAwarded}
             />
           ) : (
             <>
@@ -219,11 +265,19 @@ export function WorkoutLoggerModal({
                     </View>
                   </View>
 
-                  <Text className="mt-4 font-barlow text-[16px] leading-[22px] text-text-dim">
-                    {activeDraft.hasHistory
-                      ? "Loaded from the last time you logged this move."
-                      : "Start with a steady first weight."}
-                  </Text>
+                  <View className="mt-4 rounded-lg border border-line bg-panel-2 p-4">
+                    <Text
+                      className="font-mono-medium text-[11px] uppercase text-text-dim"
+                      style={labelTracking}
+                    >
+                      autopilot
+                    </Text>
+                    <InstructionLine
+                      className="mt-1 text-[16px] leading-[22px] text-text"
+                      instruction={activeDraft.instruction}
+                      numberClassName="text-[16px] text-text"
+                    />
+                  </View>
 
                   <SetRows
                     activeSetIndex={activeSetIndex}
@@ -241,7 +295,7 @@ export function WorkoutLoggerModal({
                       label={activeDraft.exercise.loadType === "assist" ? "Assist level" : "Weight"}
                       min={0}
                       onChange={(weight) => updateActiveSet({ weight })}
-                      step={0.5}
+                      step={activeDraft.exercise.loadType === "assist" ? 1 : 0.5}
                       unit={activeDraft.exercise.loadType === "assist" ? "band" : "kg"}
                       value={activeSet.weight}
                     />
@@ -399,13 +453,17 @@ function WorkoutSummary({
   loggedSetCount,
   mode,
   onBack,
-  onSave
+  onSave,
+  progressionEvents,
+  xpAwarded
 }: {
   loggedEntries: ExerciseLog[];
   loggedSetCount: number;
   mode: "summary" | "saving";
   onBack: () => void;
   onSave: () => void;
+  progressionEvents: ProgressionSummaryEvent[];
+  xpAwarded: number;
 }) {
   const volume = calculateSessionVolume(loggedEntries);
 
@@ -416,11 +474,9 @@ function WorkoutSummary({
         <View className="mt-5 gap-3">
           <SummaryMetric label="sets logged" value={String(loggedSetCount)} />
           <SummaryMetric label="volume" unit="kg" value={formatVolume(volume)} />
-          <SummaryMetric label="xp awarded" value={`+${XP_EVENTS.workoutSessionSaved} XP`} />
+          <SummaryMetric label="xp awarded" value={`+${xpAwarded} XP`} />
         </View>
-        <Text className="mt-5 font-barlow text-[16px] leading-[22px] text-text-dim">
-          Progression checks arrive in the next milestone.
-        </Text>
+        {progressionEvents.length > 0 ? <ProgressionMoment events={progressionEvents} /> : null}
       </Panel>
 
       <View className="flex-row gap-3">
@@ -447,6 +503,69 @@ function WorkoutSummary({
       </View>
     </ScrollView>
   );
+}
+
+function ProgressionMoment({ events }: { events: ProgressionSummaryEvent[] }) {
+  const primaryEvent = events[0];
+  const countedValue = useProgressionCountUp(primaryEvent.target.targetLoad);
+  const displayValue =
+    primaryEvent.target.loadType === "assist"
+      ? String(Math.round(countedValue))
+      : formatWeight(countedValue);
+  const unit = primaryEvent.target.loadType === "assist" ? "assist" : "kg";
+  const otherEventNames = events
+    .slice(1)
+    .map((event) => event.exerciseName)
+    .join(", ");
+
+  return (
+    <View className="mt-5 rounded-lg border border-line bg-panel-2 p-4">
+      <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+        progression
+      </Text>
+      <View className="mt-1 flex-row items-baseline">
+        <Num weight="medium" className="text-[40px] leading-[48px] text-amber">
+          {displayValue}
+        </Num>
+        <Text className="ml-2 font-barlow text-[16px] text-text-dim">{unit}</Text>
+      </View>
+      <Text className="mt-2 font-barlow-semibold text-[18px] leading-[22px] text-text">
+        {primaryEvent.exerciseName}
+      </Text>
+      {otherEventNames ? (
+        <Text className="mt-1 font-barlow text-[16px] leading-[22px] text-text-dim">
+          Also: {otherEventNames}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function useProgressionCountUp(targetValue: number): number {
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    let frame = 0;
+    const startedAt = Date.now();
+
+    function tick() {
+      const elapsed = Date.now() - startedAt;
+      const progress = Math.min(1, elapsed / PROGRESSION_MOMENT_MS);
+
+      setValue(targetValue * progress);
+
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      }
+    }
+
+    setValue(0);
+    frame = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frame);
+  }, [targetValue]);
+
+  return value;
 }
 
 function SummaryMetric({ label, unit, value }: { label: string; unit?: string; value: string }) {
