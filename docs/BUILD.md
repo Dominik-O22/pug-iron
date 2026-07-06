@@ -9,6 +9,7 @@ Stack: **Expo SDK 57** (React Native 0.86, React 19.2, New Architecture, Hermes)
 | Tool | Version | Notes |
 |---|---|---|
 | Node | ≥ 22.11 | RN 0.86 minimum |
+| Bun | ≥ 1.3 | package manager (`bun install`, `bunx expo …`); Node still runs Metro/scripts |
 | JDK | **17** | RN's documented requirement; higher JDKs can break the Gradle build |
 | Android SDK | platform **35**, build-tools **36.0.0**, platform-tools, cmdline-tools | headless install below; no Android Studio needed |
 
@@ -41,20 +42,22 @@ sdk.dir=/home/<you>/Android/Sdk
 v1 uses **no custom native modules** — expo-sqlite, expo-haptics, expo-file-system, expo-sharing, react-native-svg are all in Expo Go. So until the PM5 BLE stretch goal lands, the loop is just:
 
 ```sh
-npm install
-npx expo start --tunnel     # scan QR with Expo Go on the phone
+bun install
+bunx expo start --tunnel    # scan QR with Expo Go on the phone
 ```
 
 `--tunnel` sidesteps WSL2's NAT (phone can't reach the WSL IP directly; tunnel routes via ngrok). If tunnel is slow, alternatives: `adb reverse tcp:8081 tcp:8081` over USB, or Windows port-forwarding to the WSL IP.
 
 Fast Refresh applies JS edits in ~1 s. Unit tests (`src/logic/`) run with jest-expo on the desktop, no device needed.
 
-**When BLE arrives** (react-native-ble-plx = custom native module): switch to a dev client — `npx expo run:android` once builds and installs a debug app that behaves exactly like Expo Go (`npx expo start --dev-client`). Rebuild only when native deps change.
+**When BLE arrives** (react-native-ble-plx = custom native module): switch to a dev client — `bunx expo run:android` once builds and installs a debug app that behaves exactly like Expo Go (`bunx expo start --dev-client`). Rebuild only when native deps change.
+
+**Adding/aligning dependencies:** always `bunx expo install <pkg>` (never plain `bun add` for Expo/RN packages) — it resolves the SDK-matched version. Since SDK 55, all `expo-*` packages version as `~<sdk>.0.0` (e.g. `expo-sqlite@~57.0.0`); older `~15.x`-style pins are pre-SDK-55 and won't resolve. `bunx expo install --check` validates the whole set.
 
 ## Build the APK
 
 ```sh
-npx expo prebuild --platform android   # generates android/ (gitignored, regenerable)
+bunx expo prebuild --platform android  # generates android/ (gitignored, regenerable)
 cd android && ./gradlew assembleDebug
 # → android/app/build/outputs/apk/debug/app-debug.apk
 ```

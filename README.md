@@ -41,8 +41,8 @@ docs/
 ## Quick start (dev box)
 
 ```sh
-npm install
-npx expo start --tunnel    # scan the QR with Expo Go on the phone
+bun install
+bunx expo start --tunnel    # scan the QR with Expo Go on the phone
 ```
 
 APK builds need JDK 17 and the Android SDK — see [docs/BUILD.md](docs/BUILD.md) for the exact headless setup (no Android Studio required).

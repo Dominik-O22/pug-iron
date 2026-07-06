@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Pug Iron",
+    "slug": "pug-iron",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.doop.pugiron",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-font",
+      "expo-sqlite",
+      "expo-status-bar"
+    ]
+  }
+}
