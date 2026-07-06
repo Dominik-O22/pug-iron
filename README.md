@@ -8,28 +8,28 @@ A personal workout-tracking Android app for the [6-month home physique plan](htt
 
 - **Progression autopilot** — the app applies double-progression logic (8–12 reps) and tells you exactly what to attempt each session: add reps, or bump the weight and reset to the bottom of the range.
 - **Workout logging** — big-thumb-friendly set/rep/weight logging for workouts A and B, with a 90 s rest timer.
-- **Rower sessions** — log Concept2 Z2 sessions (duration, distance).
+- **Rower sessions** — log Concept2 Z2 sessions (duration, distance). Live BLE capture from the PM5 is a declared stretch goal.
 - **Body weight trend** — weigh-ins with a weekly-average trend line toward the 83 kg target.
 - **Gentle gamification** — XP and pug-themed levels for showing up. Deliberately **no streaks, no resets, no punishment**: two sessions is a fine week, zero is the only bad number, and a bad week costs you nothing you already earned.
-- **On-device data** — everything lives in IndexedDB on the phone; one-tap JSON export/import for backup. No accounts, no server.
+- **On-device data** — everything lives in a SQLite database on the phone; one-tap JSON export/import for backup. No accounts, no server.
 
 ## Stack
 
 | Layer | Choice | Why |
 |---|---|---|
-| UI | React 19 + TypeScript + Vite | Fast iteration, typed data model |
-| Storage | Dexie (IndexedDB) | Robust on-device persistence in the WebView |
-| Native shell | Capacitor 6 | Wraps the web app into an installable APK; **Capacitor 6 (not 7) because it works with Java 17 / SDK 34** |
-| Charts | Hand-rolled SVG | Two simple line charts don't justify a dependency |
-| Routing | None (state-based tabs) | Four screens, no deep links needed |
+| UI | React Native 0.86 + TypeScript via **Expo SDK 57** | Native app, typed data model, Expo Go dev loop until native modules arrive |
+| Styling | NativeWind v4 | Tailwind-style tokens over RN StyleSheet; design tokens in `tailwind.config.js` |
+| Storage | expo-sqlite | Durable native SQLite — no WebView storage caveats; WAL, transactions |
+| Charts | Hand-rolled react-native-svg | Two simple line charts don't justify a chart dependency |
+| Routing | None (state-based tabs) | Four screens, no deep links needed — no expo-router |
+| Stretch: PM5 BLE | react-native-ble-plx | Public Concept2 GATT spec; first thing that forces a dev-client build |
 
-`package.json` in the repo root pins these choices — run `npm install` and the stack decisions come with it.
+Toolchain: JDK 17 + Android SDK Platform 35 (headless, no Android Studio) — see [docs/BUILD.md](docs/BUILD.md).
 
 ## Repo layout
 
 ```
 README.md          ← you are here
-package.json       ← pinned dependency choices
 CLAUDE.md          ← context for Claude Code sessions on the dev box
 docs/
   PLAN.md          ← phased implementation plan with acceptance criteria — START HERE
@@ -42,7 +42,7 @@ docs/
 
 ```sh
 npm install
-npm run dev        # browser development at localhost:5173
+npx expo start --tunnel    # scan the QR with Expo Go on the phone
 ```
 
-APK builds need Java 17 and the Android SDK — see [docs/BUILD.md](docs/BUILD.md) for the exact headless setup (no Android Studio required).
+APK builds need JDK 17 and the Android SDK — see [docs/BUILD.md](docs/BUILD.md) for the exact headless setup (no Android Studio required).

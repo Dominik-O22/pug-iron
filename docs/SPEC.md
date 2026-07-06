@@ -45,9 +45,9 @@ Bottom tab bar, four tabs. No router — a `screen` state value in the app root.
 ### 2.2 Workout logger (modal flow from Today)
 
 - One exercise at a time, big card, swipe/next navigation; also an overview list to jump.
-- Per set: weight (kg, 0.5 steps, prefilled from autopilot) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the 90 s rest countdown (visible, with `navigator.vibrate` at 0 s; silent fail on web).
+- Per set: weight (kg, 0.5 steps, prefilled from autopilot) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the 90 s rest countdown (visible, `expo-haptics` buzz at 0 s; screen kept awake during the logger via `expo-keep-awake`).
 - Autopilot line per exercise: e.g. *"Last: 12/11/10 @ 14 kg → hit 12s across, then 16 kg next time"*.
-- Finishing: summary (sets logged, any progression events), XP awarded, save to Dexie. Partial workouts save fine — logging 3 of 5 exercises is a valid session.
+- Finishing: summary (sets logged, any progression events), XP awarded, save to SQLite. Partial workouts save fine — logging 3 of 5 exercises is a valid session.
 - Abandoning mid-workout keeps a draft in memory only; explicit *Discard* available.
 
 ### 2.3 History
@@ -68,7 +68,9 @@ Bottom tab bar, four tabs. No router — a `screen` state value in the app root.
 - Edit exercises: rename, sets, rep range, increment, reorder.
 - Danger zone: wipe all data (double confirm).
 
-## 3. Data model (Dexie v1)
+## 3. Data model (expo-sqlite, schema v1)
+
+Domain shapes (what `src/logic/` and the UI speak):
 
 ```ts
 interface SetEntry   { weight: number; reps: number }          // weight = assist level for loadType 'assist'
@@ -104,7 +106,25 @@ interface ExerciseDef {         // seeded, user-editable
 interface Setting { key: string; value: unknown }  // 'xpTotal', 'startWeightKg', 'targetWeightKg' (83), 'schemaVersion'
 ```
 
-Dexie tables: `sessions, rows, weighins, exercises, settings`. Index `date` on the three log tables.
+SQLite tables (one `db.ts` module owns all SQL; nothing else imports expo-sqlite):
+
+```sql
+CREATE TABLE sessions  (id INTEGER PRIMARY KEY, date TEXT NOT NULL, workout TEXT NOT NULL,
+                        entries TEXT NOT NULL,            -- JSON ExerciseLog[]
+                        progression_events TEXT NOT NULL, -- JSON string[]
+                        started_at INTEGER NOT NULL, finished_at INTEGER, xp INTEGER NOT NULL);
+CREATE TABLE rows      (id INTEGER PRIMARY KEY, date TEXT NOT NULL, minutes REAL NOT NULL,
+                        meters INTEGER, xp INTEGER NOT NULL);
+CREATE TABLE weighins  (id INTEGER PRIMARY KEY, date TEXT NOT NULL, kg REAL NOT NULL, xp INTEGER NOT NULL);
+CREATE TABLE exercises (id TEXT PRIMARY KEY, name TEXT, workout TEXT, ord INTEGER, sets INTEGER,
+                        rep_low INTEGER, rep_high INTEGER, load_type TEXT, increment_kg REAL, note TEXT);
+CREATE TABLE settings  (key TEXT PRIMARY KEY, value TEXT NOT NULL);  -- JSON value
+CREATE INDEX idx_sessions_date ON sessions(date);
+CREATE INDEX idx_rows_date     ON rows(date);
+CREATE INDEX idx_weighins_date ON weighins(date);
+```
+
+Set/rep detail stays as a JSON column (`entries`) — the app never queries inside a set, only whole sessions by date; keeps export/import trivially shaped like the domain types. Schema version via `PRAGMA user_version`; any change = bump + in-order migration steps on open. WAL mode on.
 
 ## 4. Progression autopilot (double progression)
 
@@ -155,12 +175,12 @@ Export = one JSON file, `pug-iron-backup-YYYY-MM-DD.json`:
   "sessions": [], "rows": [], "weighins": [], "exercises": [], "settings": [] }
 ```
 
-Share via `@capacitor/filesystem` (write to Cache) + `@capacitor/share`; on plain web dev, fall back to an `<a download>` blob. Import validates `app` + `schemaVersion`, shows counts ("124 workouts, 61 weigh-ins — replace current data?"), then transactionally replaces all tables.
+Share via `expo-file-system` (write to cache dir) + `expo-sharing`; import via `expo-document-picker`. Import validates `app` + `schemaVersion`, shows counts ("124 workouts, 61 weigh-ins — replace current data?"), then transactionally replaces all tables. The backup JSON contains domain-shaped objects (§3 interfaces), not raw SQL rows — storage can change under it as long as the shim maps.
 
 ## 7. Non-goals (v1)
 
 - No diet/calorie tracking (user handles diet, uses a dedicated app).
 - No cloud sync, accounts, or multi-device merge — export/import is the migration path.
 - No exercise library beyond the plan's ten movements (editable, but no picker UI).
-- No Bluetooth/PM5 pairing for the Concept2 (manual entry only; nice-to-have someday).
+- No Bluetooth/PM5 pairing for the Concept2 in v1 — manual entry only. **Declared stretch goal**: passive BLE capture from the PM5 (public GATT spec, `react-native-ble-plx`, foreground only). First thing that forces a dev-client build instead of Expo Go; captured row sessions will need their own richer shape than `RowSession` — spec that when it starts.
 - No notifications/reminders in v1 (revisit only if asked — reminders can read as nagging, which violates §5's spirit).
