@@ -1,56 +1,44 @@
-import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Text, View } from "react-native";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { Num } from "./components/Num";
 import { Panel } from "./components/Panel";
-import { openPugIronDb } from "./db";
+import { TabBar, type Screen } from "./components/TabBar";
+import {
+  getLastWorkoutSession,
+  getLatestExerciseLogs,
+  getTodayWorkoutSessions,
+  getXpTotal,
+  insertWorkoutSessionWithXp,
+  listExerciseDefs,
+  listWorkoutSessions,
+  openPugIronDb,
+  type PugIronDb
+} from "./db";
+import { labelTracking, localDateString } from "./lib/format";
+import { HistoryScreen } from "./screens/HistoryScreen";
+import { TodayScreen } from "./screens/TodayScreen";
+import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
+import { rankForXp } from "./logic/xp";
+import type { ExerciseDef, ExerciseLog, WorkoutSession } from "./types";
 
-type Screen = "today" | "history" | "progress" | "settings";
-
-type Tab = {
-  key: Screen;
-  label: string;
-};
-
-// letterSpacing has no NativeWind utility; the mono eyebrow tracking lives here.
-const labelTracking = { letterSpacing: 1.5 } as const;
-
-const tabs: Tab[] = [
-  { key: "today", label: "Today" },
-  { key: "history", label: "History" },
-  { key: "progress", label: "Progress" },
-  { key: "settings", label: "Settings" }
-];
-
-const screenCopy: Record<Screen, { eyebrow: string; title: string; body: string }> = {
-  today: {
-    eyebrow: "today deck",
-    title: "Ready for the next lift",
-    body: "Workout A and B are seeded. Logging comes next."
-  },
-  history: {
-    eyebrow: "history log",
-    title: "Training records",
-    body: "Saved sessions, rower entries, and weigh-ins will land here."
-  },
-  progress: {
-    eyebrow: "progress scope",
-    title: "Long view",
-    body: "Charts and lifetime readouts will use the same local database."
-  },
-  settings: {
-    eyebrow: "settings bay",
-    title: "Offline controls",
-    body: "Backup, import, and exercise editing controls will live here."
-  }
+type AppData = {
+  exercises: ExerciseDef[];
+  latestLogs: Record<string, ExerciseLog>;
+  lastSession: WorkoutSession | null;
+  sessions: WorkoutSession[];
+  todaySessions: WorkoutSession[];
+  xpTotal: number;
 };
 
 function PugIronApp() {
   const [screen, setScreen] = useState<Screen>("today");
-  const [dbReady, setDbReady] = useState(false);
+  const [db, setDb] = useState<PugIronDb | null>(null);
+  const [appData, setAppData] = useState<AppData | null>(null);
+  const [loggerState, setLoggerState] = useState<LoggerState | null>(null);
   const [fontsLoaded] = useFonts({
     "BarlowSemiCondensed-Regular": require("./fonts/BarlowSemiCondensed-Regular.ttf"),
     "BarlowSemiCondensed-SemiBold": require("./fonts/BarlowSemiCondensed-SemiBold.ttf"),
@@ -58,6 +46,30 @@ function PugIronApp() {
     "IBMPlexMono-Regular": require("./fonts/IBMPlexMono-Regular.ttf"),
     "IBMPlexMono-Medium": require("./fonts/IBMPlexMono-Medium.ttf")
   });
+
+  const loadAppData = useCallback(async (database: PugIronDb) => {
+    const today = localDateString(new Date());
+    const [exercises, sessions, lastSession, todaySessions, xpTotal] = await Promise.all([
+      listExerciseDefs(database),
+      listWorkoutSessions(database),
+      getLastWorkoutSession(database),
+      getTodayWorkoutSessions(database, today),
+      getXpTotal(database)
+    ]);
+    const latestLogs = await getLatestExerciseLogs(
+      database,
+      exercises.map((exercise) => exercise.id)
+    );
+
+    setAppData({
+      exercises,
+      latestLogs,
+      lastSession,
+      sessions,
+      todaySessions,
+      xpTotal
+    });
+  }, []);
 
   useEffect(() => {
     if (!fontsLoaded) {
@@ -67,21 +79,37 @@ function PugIronApp() {
     let mounted = true;
 
     openPugIronDb()
+      .then(async (database) => {
+        if (!mounted) {
+          return;
+        }
+
+        setDb(database);
+        await loadAppData(database);
+      })
       .catch((error: unknown) => {
         console.error("Failed to open Pug Iron database", error);
-      })
-      .finally(() => {
-        if (mounted) {
-          setDbReady(true);
-        }
       });
 
     return () => {
       mounted = false;
     };
-  }, [fontsLoaded]);
+  }, [fontsLoaded, loadAppData]);
 
-  if (!fontsLoaded || !dbReady) {
+  const handleSaveSession = useCallback(
+    async (session: WorkoutSession) => {
+      if (!db) {
+        return;
+      }
+
+      await insertWorkoutSessionWithXp(db, session);
+      await loadAppData(db);
+      setLoggerState(null);
+    },
+    [db, loadAppData]
+  );
+
+  if (!fontsLoaded || !appData) {
     return (
       <View className="flex-1 bg-bg">
         <StatusBar style="light" />
@@ -89,9 +117,11 @@ function PugIronApp() {
     );
   }
 
+  const rankState = rankForXp(appData.xpTotal);
+
   return (
     <View className="flex-1 bg-bg">
-      <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+      <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <StatusBar style="light" />
         <View className="px-5 pt-3">
           <Text
@@ -100,16 +130,37 @@ function PugIronApp() {
           >
             PUG IRON
           </Text>
-          <View className="mt-2.5 flex-row items-center justify-between">
-            <Text className="font-barlow-bold text-[24px] uppercase text-text">SLEEPY PUG</Text>
+          <View className="mt-2.5 flex-row items-center justify-between gap-4">
+            <Text className="flex-1 font-barlow-bold text-[24px] uppercase leading-[28px] text-text">
+              {rankState.current.name}
+            </Text>
             <Num weight="medium" className="text-[13px] text-mint">
-              0 XP
+              {appData.xpTotal} XP
             </Num>
           </View>
+          <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2">
+            <View className="h-full bg-mint" style={{ width: `${rankState.progress * 100}%` }} />
+          </View>
         </View>
-        <View className="flex-1 p-5">{renderScreen(screen)}</View>
+        <View className="flex-1 p-5">
+          {renderScreen({
+            appData,
+            onStartWorkout: (workout) => setLoggerState({ workout, startedAt: Date.now() }),
+            screen
+          })}
+        </View>
         <TabBar activeScreen={screen} onChange={setScreen} />
       </SafeAreaView>
+
+      {loggerState ? (
+        <WorkoutLoggerModal
+          exercises={appData.exercises.filter((exercise) => exercise.workout === loggerState.workout)}
+          latestLogs={appData.latestLogs}
+          loggerState={loggerState}
+          onClose={() => setLoggerState(null)}
+          onSave={handleSaveSession}
+        />
+      ) : null}
     </View>
   );
 }
@@ -122,54 +173,42 @@ export default function App() {
   );
 }
 
-function renderScreen(screen: Screen) {
-  const copy = screenCopy[screen];
-
-  return (
-    <Panel eyebrow={copy.eyebrow} className="min-h-[180px]">
-      <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">{copy.title}</Text>
-      <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">{copy.body}</Text>
-    </Panel>
-  );
-}
-
-function TabBar({
-  activeScreen,
-  onChange
+function renderScreen({
+  appData,
+  onStartWorkout,
+  screen
 }: {
-  activeScreen: Screen;
-  onChange: (screen: Screen) => void;
+  appData: AppData;
+  onStartWorkout: (workout: WorkoutSession["workout"]) => void;
+  screen: Screen;
 }) {
-  const insets = useSafeAreaInsets();
+  if (screen === "today") {
+    return <TodayScreen appData={appData} onStartWorkout={onStartWorkout} />;
+  }
+
+  if (screen === "history") {
+    return <HistoryScreen sessions={appData.sessions} />;
+  }
+
+  if (screen === "progress") {
+    return (
+      <Panel eyebrow="progress scope" className="min-h-[180px]">
+        <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">Long view</Text>
+        <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
+          Charts and lifetime readouts use the local database.
+        </Text>
+      </Panel>
+    );
+  }
 
   return (
-    <View
-      className="flex-row border-t border-line bg-panel px-2"
-      style={{ paddingBottom: Math.max(insets.bottom, 12) }}
-    >
-      {tabs.map((tab) => {
-        const active = tab.key === activeScreen;
-
-        return (
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            key={tab.key}
-            onPress={() => onChange(tab.key)}
-            className="min-h-[56px] flex-1 items-center pt-3"
-          >
-            <View
-              className={`absolute left-3 right-3 top-0 h-0.5 ${active ? "bg-mint" : "bg-transparent"}`}
-            />
-            <Text
-              className={`font-mono-medium text-[11px] uppercase ${active ? "text-mint" : "text-text-dim"}`}
-              style={labelTracking}
-            >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <Panel eyebrow="settings bay" className="min-h-[180px]">
+      <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">
+        Offline controls
+      </Text>
+      <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
+        Backup, import, and exercise editing controls live here.
+      </Text>
+    </Panel>
   );
 }

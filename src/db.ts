@@ -1,16 +1,50 @@
 import * as SQLite from "expo-sqlite";
 
 import { EXERCISE_DEFS } from "./plan";
-import type { ExerciseDef } from "./types";
+import type { ExerciseDef, ExerciseLog, Setting, WorkoutSession } from "./types";
 
 const DATABASE_NAME = "pug-iron.db";
 const SCHEMA_VERSION = 1;
 
-type PugIronDb = SQLite.SQLiteDatabase;
+export type PugIronDb = SQLite.SQLiteDatabase;
 
 type UserVersionRow = {
   user_version: number;
 };
+
+type ExerciseRow = {
+  id: string;
+  name: string;
+  workout: string;
+  ord: number;
+  sets: number;
+  rep_low: number;
+  rep_high: number;
+  load_type: string;
+  increment_kg: number;
+  note: string;
+};
+
+type SessionRow = {
+  id: number;
+  date: string;
+  workout: string;
+  entries: string;
+  progression_events: string;
+  started_at: number;
+  finished_at: number | null;
+  xp: number;
+};
+
+type SettingValueRow = {
+  value: string;
+};
+
+const DEFAULT_SETTINGS: Setting[] = [
+  { key: "xpTotal", value: 0 },
+  { key: "targetWeightKg", value: 83 },
+  { key: "schemaVersion", value: 1 }
+];
 
 const CREATE_SCHEMA_SQL = `
 CREATE TABLE sessions  (id INTEGER PRIMARY KEY, date TEXT NOT NULL, workout TEXT NOT NULL,
@@ -34,6 +68,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING;
 `;
 
+const INSERT_SETTING_SQL = `
+INSERT INTO settings (key, value)
+VALUES (?, ?)
+ON CONFLICT(key) DO NOTHING;
+`;
+
 type MigrationStep = {
   from: number;
   to: number;
@@ -47,6 +87,7 @@ const migrationSteps: MigrationStep[] = [
     run: async (db) => {
       await db.execAsync(CREATE_SCHEMA_SQL);
       await seedExerciseDefs(db, EXERCISE_DEFS);
+      await seedDefaultSettings(db);
       await db.execAsync("PRAGMA user_version = 1;");
     }
   }
@@ -57,8 +98,122 @@ export async function openPugIronDb(): Promise<PugIronDb> {
 
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await runMigrations(db);
+  await seedDefaultSettings(db);
 
   return db;
+}
+
+export async function listExerciseDefs(db: PugIronDb): Promise<ExerciseDef[]> {
+  const rows = await db.getAllAsync<ExerciseRow>(
+    `SELECT id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note
+     FROM exercises
+     ORDER BY workout ASC, ord ASC;`
+  );
+
+  return rows.map(mapExerciseRow);
+}
+
+export async function getXpTotal(db: PugIronDb): Promise<number> {
+  return getSettingValue(db, "xpTotal", 0);
+}
+
+export async function getLastWorkoutSession(db: PugIronDb): Promise<WorkoutSession | null> {
+  const row = await db.getFirstAsync<SessionRow>(
+    `SELECT id, date, workout, entries, progression_events, started_at, finished_at, xp
+     FROM sessions
+     ORDER BY started_at DESC, id DESC
+     LIMIT 1;`
+  );
+
+  return row ? mapSessionRow(row) : null;
+}
+
+export async function getTodayWorkoutSessions(
+  db: PugIronDb,
+  date: string
+): Promise<WorkoutSession[]> {
+  const rows = await db.getAllAsync<SessionRow>(
+    `SELECT id, date, workout, entries, progression_events, started_at, finished_at, xp
+     FROM sessions
+     WHERE date = ?
+     ORDER BY started_at DESC, id DESC;`,
+    [date]
+  );
+
+  return rows.map(mapSessionRow);
+}
+
+export async function listWorkoutSessions(db: PugIronDb): Promise<WorkoutSession[]> {
+  const rows = await db.getAllAsync<SessionRow>(
+    `SELECT id, date, workout, entries, progression_events, started_at, finished_at, xp
+     FROM sessions
+     ORDER BY started_at DESC, id DESC;`
+  );
+
+  return rows.map(mapSessionRow);
+}
+
+export async function getLatestExerciseLogs(
+  db: PugIronDb,
+  exerciseIds: string[]
+): Promise<Record<string, ExerciseLog>> {
+  if (exerciseIds.length === 0) {
+    return {};
+  }
+
+  const targets = new Set(exerciseIds);
+  const logs: Record<string, ExerciseLog> = {};
+  const rows = await db.getAllAsync<Pick<SessionRow, "entries">>(
+    `SELECT entries
+     FROM sessions
+     ORDER BY started_at DESC, id DESC;`
+  );
+
+  for (const row of rows) {
+    const entries = parseJson<ExerciseLog[]>(row.entries);
+
+    for (const entry of entries) {
+      if (targets.has(entry.exerciseId) && !logs[entry.exerciseId]) {
+        logs[entry.exerciseId] = entry;
+      }
+    }
+
+    if (Object.keys(logs).length === targets.size) {
+      break;
+    }
+  }
+
+  return logs;
+}
+
+export async function insertWorkoutSessionWithXp(
+  db: PugIronDb,
+  session: WorkoutSession
+): Promise<WorkoutSession> {
+  let insertedId: number | undefined;
+
+  await db.withTransactionAsync(async () => {
+    const result = await db.runAsync(
+      `INSERT INTO sessions (date, workout, entries, progression_events, started_at, finished_at, xp)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        session.date,
+        session.workout,
+        JSON.stringify(session.entries),
+        JSON.stringify(session.progressionEvents),
+        session.startedAt,
+        session.finishedAt ?? null,
+        session.xp
+      ]
+    );
+
+    insertedId = result.lastInsertRowId;
+
+    const currentXp = await getSettingValue(db, "xpTotal", 0);
+    await setSettingValue(db, "xpTotal", currentXp + session.xp);
+  });
+
+  return { ...session, id: insertedId };
 }
 
 async function runMigrations(db: PugIronDb): Promise<void> {
@@ -100,4 +255,75 @@ async function seedExerciseDefs(db: PugIronDb, exerciseDefs: ExerciseDef[]): Pro
       exercise.note
     ]);
   }
+}
+
+async function seedDefaultSettings(db: PugIronDb): Promise<void> {
+  for (const setting of DEFAULT_SETTINGS) {
+    await db.runAsync(INSERT_SETTING_SQL, [setting.key, JSON.stringify(setting.value)]);
+  }
+}
+
+async function getSettingValue<T>(db: PugIronDb, key: string, fallback: T): Promise<T> {
+  const row = await db.getFirstAsync<SettingValueRow>("SELECT value FROM settings WHERE key = ?;", [
+    key
+  ]);
+
+  if (!row) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function setSettingValue(db: PugIronDb, key: string, value: unknown): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO settings (key, value)
+     VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+    [key, JSON.stringify(value)]
+  );
+}
+
+function mapExerciseRow(row: ExerciseRow): ExerciseDef {
+  return {
+    id: row.id,
+    name: row.name,
+    workout: parseWorkout(row.workout),
+    order: row.ord,
+    sets: row.sets,
+    repLow: row.rep_low,
+    repHigh: row.rep_high,
+    loadType: row.load_type === "assist" ? "assist" : "weight",
+    incrementKg: row.increment_kg,
+    note: row.note
+  };
+}
+
+function mapSessionRow(row: SessionRow): WorkoutSession {
+  return {
+    id: row.id,
+    date: row.date,
+    workout: parseWorkout(row.workout),
+    entries: parseJson<ExerciseLog[]>(row.entries),
+    progressionEvents: parseJson<string[]>(row.progression_events),
+    startedAt: row.started_at,
+    ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+    xp: row.xp
+  };
+}
+
+function parseWorkout(value: string): WorkoutSession["workout"] {
+  if (value !== "A" && value !== "B") {
+    throw new Error(`Unknown workout code: ${value}`);
+  }
+
+  return value;
+}
+
+function parseJson<T>(value: string): T {
+  return JSON.parse(value) as T;
 }
