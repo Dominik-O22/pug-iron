@@ -18,6 +18,12 @@ const SCHEMA_VERSION = 1;
 
 export type PugIronDb = SQLite.SQLiteDatabase;
 
+export type XpMutationResult<T> = {
+  item: T;
+  nextXpTotal: number;
+  previousXpTotal: number;
+};
+
 type UserVersionRow = {
   user_version: number;
 };
@@ -298,8 +304,10 @@ export async function getLifetimeTotals(db: PugIronDb): Promise<LifetimeTotals> 
 export async function insertWorkoutSessionWithXp(
   db: PugIronDb,
   session: WorkoutSession
-): Promise<WorkoutSession> {
+): Promise<XpMutationResult<WorkoutSession>> {
   let insertedId: number | undefined;
+  let previousXpTotal = 0;
+  let nextXpTotal = 0;
 
   await db.withTransactionAsync(async () => {
     const result = await db.runAsync(
@@ -318,18 +326,25 @@ export async function insertWorkoutSessionWithXp(
 
     insertedId = result.lastInsertRowId;
 
-    const currentXp = await getSettingValue(db, "xpTotal", 0);
-    await setSettingValue(db, "xpTotal", currentXp + session.xp);
+    previousXpTotal = await getSettingValue(db, "xpTotal", 0);
+    nextXpTotal = previousXpTotal + session.xp;
+    await setSettingValue(db, "xpTotal", nextXpTotal);
   });
 
-  return { ...session, id: insertedId };
+  return {
+    item: { ...session, id: insertedId },
+    nextXpTotal,
+    previousXpTotal
+  };
 }
 
 export async function insertRowSessionWithXp(
   db: PugIronDb,
   rowSession: Omit<RowSession, "id" | "xp">
-): Promise<RowSession> {
+): Promise<XpMutationResult<RowSession>> {
   let insertedId: number | undefined;
+  let nextXpTotal = 0;
+  let previousXpTotal = 0;
   const xp = XP_EVENTS.rowerSession;
 
   await db.withTransactionAsync(async () => {
@@ -341,18 +356,25 @@ export async function insertRowSessionWithXp(
 
     insertedId = result.lastInsertRowId;
 
-    const currentXp = await getSettingValue(db, "xpTotal", 0);
-    await setSettingValue(db, "xpTotal", currentXp + xp);
+    previousXpTotal = await getSettingValue(db, "xpTotal", 0);
+    nextXpTotal = previousXpTotal + xp;
+    await setSettingValue(db, "xpTotal", nextXpTotal);
   });
 
-  return { ...rowSession, id: insertedId, xp };
+  return {
+    item: { ...rowSession, id: insertedId, xp },
+    nextXpTotal,
+    previousXpTotal
+  };
 }
 
 export async function insertWeighInWithXp(
   db: PugIronDb,
   weighIn: Omit<WeighIn, "id" | "xp">
-): Promise<WeighIn> {
+): Promise<XpMutationResult<WeighIn>> {
   let insertedId: number | undefined;
+  let nextXpTotal = 0;
+  let previousXpTotal = 0;
   let xp = 0;
 
   await db.withTransactionAsync(async () => {
@@ -372,9 +394,11 @@ export async function insertWeighInWithXp(
 
     insertedId = result.lastInsertRowId;
 
+    previousXpTotal = await getSettingValue(db, "xpTotal", 0);
+    nextXpTotal = previousXpTotal + xp;
+
     if (xp > 0) {
-      const currentXp = await getSettingValue(db, "xpTotal", 0);
-      await setSettingValue(db, "xpTotal", currentXp + xp);
+      await setSettingValue(db, "xpTotal", nextXpTotal);
     }
 
     const currentStartWeight = await getSettingValue<number | null>(db, "startWeightKg", null);
@@ -393,7 +417,42 @@ export async function insertWeighInWithXp(
     }
   });
 
-  return { ...weighIn, id: insertedId, xp };
+  return {
+    item: { ...weighIn, id: insertedId, xp },
+    nextXpTotal,
+    previousXpTotal
+  };
+}
+
+export async function updateWorkoutSessionKeepingXp(
+  db: PugIronDb,
+  session: WorkoutSession & { id: number }
+): Promise<WorkoutSession> {
+  await db.runAsync(
+    `UPDATE sessions
+     SET entries = ?, progression_events = ?, finished_at = ?
+     WHERE id = ?;`,
+    [
+      JSON.stringify(session.entries),
+      JSON.stringify(session.progressionEvents),
+      session.finishedAt ?? null,
+      session.id
+    ]
+  );
+
+  return session;
+}
+
+export async function deleteWorkoutSessionKeepingXp(db: PugIronDb, id: number): Promise<void> {
+  await db.runAsync(`DELETE FROM sessions WHERE id = ?;`, [id]);
+}
+
+export async function deleteRowSessionKeepingXp(db: PugIronDb, id: number): Promise<void> {
+  await db.runAsync(`DELETE FROM rows WHERE id = ?;`, [id]);
+}
+
+export async function deleteWeighInKeepingXp(db: PugIronDb, id: number): Promise<void> {
+  await db.runAsync(`DELETE FROM weighins WHERE id = ?;`, [id]);
 }
 
 async function runMigrations(db: PugIronDb): Promise<void> {

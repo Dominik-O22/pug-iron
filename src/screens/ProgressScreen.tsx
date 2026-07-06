@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { LineChart, type ChartPoint } from "../components/Chart";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
+import { RankProgressLine } from "../components/RankProgressLine";
 import { dateParts, formatVolume, formatWeight, labelTracking } from "../lib/format";
 import {
   ASSIST_LEVEL_MAX,
@@ -296,19 +297,30 @@ function RankTotalsPanel({
 
   return (
     <Panel eyebrow="xp and totals">
-      <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">
-        {rankState.current.name}
-      </Text>
+      <RankProgressLine xpTotal={xpTotal} />
       <View className="mt-3 flex-row items-center">
         <Num weight="medium" className="text-[18px] text-mint">
           {xpTotal}
         </Num>
         <Text className="font-barlow text-[16px] text-text-dim"> XP total</Text>
       </View>
-      <View className="mt-3 h-1.5 overflow-hidden rounded-full bg-panel-2">
-        <View className="h-full bg-mint" style={{ width: `${rankState.progress * 100}%` }} />
-      </View>
       <View className="mt-3 flex-row items-center">
+        {rankState.next ? (
+          <>
+            <Num weight="medium" className="text-[16px] text-mint">
+              {rankState.xpIntoLevel}
+            </Num>
+            <Text className="font-barlow text-[16px] text-text-dim"> / </Text>
+            <Num weight="medium" className="text-[16px] text-mint">
+              {rankState.xpForLevel}
+            </Num>
+            <Text className="font-barlow text-[16px] text-text-dim"> XP in rank</Text>
+          </>
+        ) : (
+          <Text className="font-barlow text-[16px] text-text-dim">Top rank reached.</Text>
+        )}
+      </View>
+      <View className="mt-2 flex-row items-center">
         {rankState.next ? (
           <>
             <Num weight="medium" className="text-[16px] text-mint">
@@ -317,7 +329,7 @@ function RankTotalsPanel({
             <Text className="font-barlow text-[16px] text-text-dim"> XP to next rank</Text>
           </>
         ) : (
-          <Text className="font-barlow text-[16px] text-text-dim">Top rank reached.</Text>
+          <Text className="font-barlow text-[16px] text-text-dim">Keep banking XP.</Text>
         )}
       </View>
 

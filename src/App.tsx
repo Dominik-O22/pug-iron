@@ -4,10 +4,14 @@ import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-import { Num } from "./components/Num";
 import { Panel } from "./components/Panel";
+import { RankProgressLine } from "./components/RankProgressLine";
+import { RankUpModal } from "./components/RankUpModal";
 import { TabBar, type Screen } from "./components/TabBar";
 import {
+  deleteRowSessionKeepingXp,
+  deleteWeighInKeepingXp,
+  deleteWorkoutSessionKeepingXp,
   getLastWorkoutSession,
   getLatestExerciseLogs,
   getLifetimeTotals,
@@ -22,6 +26,7 @@ import {
   listWeighIns,
   listWorkoutSessions,
   openPugIronDb,
+  updateWorkoutSessionKeepingXp,
   type PugIronDb
 } from "./db";
 import { labelTracking, localDateString } from "./lib/format";
@@ -29,7 +34,7 @@ import { HistoryScreen } from "./screens/HistoryScreen";
 import { ProgressScreen } from "./screens/ProgressScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
-import { rankForXp } from "./logic/xp";
+import { highestRankGainedBetween, type Rank } from "./logic/xp";
 import type {
   ExerciseDef,
   ExerciseLog,
@@ -58,6 +63,7 @@ function PugIronApp() {
   const [db, setDb] = useState<PugIronDb | null>(null);
   const [appData, setAppData] = useState<AppData | null>(null);
   const [loggerState, setLoggerState] = useState<LoggerState | null>(null);
+  const [rankUpRank, setRankUpRank] = useState<Rank | null>(null);
   const [fontsLoaded] = useFonts({
     "BarlowSemiCondensed-Regular": require("./fonts/BarlowSemiCondensed-Regular.ttf"),
     "BarlowSemiCondensed-SemiBold": require("./fonts/BarlowSemiCondensed-SemiBold.ttf"),
@@ -139,9 +145,12 @@ function PugIronApp() {
         return;
       }
 
-      await insertWorkoutSessionWithXp(db, session);
+      const result = await insertWorkoutSessionWithXp(db, session);
       await loadAppData(db);
       setLoggerState(null);
+      setRankUpRank(
+        highestRankGainedBetween(result.previousXpTotal, result.nextXpTotal)
+      );
     },
     [db, loadAppData]
   );
@@ -152,8 +161,11 @@ function PugIronApp() {
         return;
       }
 
-      await insertRowSessionWithXp(db, rowSession);
+      const result = await insertRowSessionWithXp(db, rowSession);
       await loadAppData(db);
+      setRankUpRank(
+        highestRankGainedBetween(result.previousXpTotal, result.nextXpTotal)
+      );
     },
     [db, loadAppData]
   );
@@ -164,7 +176,58 @@ function PugIronApp() {
         return;
       }
 
-      await insertWeighInWithXp(db, weighIn);
+      const result = await insertWeighInWithXp(db, weighIn);
+      await loadAppData(db);
+      setRankUpRank(
+        highestRankGainedBetween(result.previousXpTotal, result.nextXpTotal)
+      );
+    },
+    [db, loadAppData]
+  );
+
+  const handleUpdateSession = useCallback(
+    async (session: WorkoutSession & { id: number }) => {
+      if (!db) {
+        return;
+      }
+
+      await updateWorkoutSessionKeepingXp(db, session);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
+  const handleDeleteWorkoutSession = useCallback(
+    async (sessionId: number) => {
+      if (!db) {
+        return;
+      }
+
+      await deleteWorkoutSessionKeepingXp(db, sessionId);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
+  const handleDeleteRowSession = useCallback(
+    async (rowSessionId: number) => {
+      if (!db) {
+        return;
+      }
+
+      await deleteRowSessionKeepingXp(db, rowSessionId);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
+  const handleDeleteWeighIn = useCallback(
+    async (weighInId: number) => {
+      if (!db) {
+        return;
+      }
+
+      await deleteWeighInKeepingXp(db, weighInId);
       await loadAppData(db);
     },
     [db, loadAppData]
@@ -178,8 +241,6 @@ function PugIronApp() {
     );
   }
 
-  const rankState = rankForXp(appData.xpTotal);
-
   return (
     <View className="flex-1 bg-bg">
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
@@ -191,24 +252,18 @@ function PugIronApp() {
           >
             PUG IRON
           </Text>
-          <View className="mt-2.5 flex-row items-center justify-between gap-4">
-            <Text className="flex-1 font-barlow-bold text-[24px] uppercase leading-[28px] text-text">
-              {rankState.current.name}
-            </Text>
-            <Num weight="medium" className="text-[13px] text-mint">
-              {appData.xpTotal} XP
-            </Num>
-          </View>
-          <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2">
-            <View className="h-full bg-mint" style={{ width: `${rankState.progress * 100}%` }} />
-          </View>
+          <RankProgressLine className="mt-2.5" xpTotal={appData.xpTotal} />
         </View>
         <View className="flex-1 p-5">
           {renderScreen({
             appData,
+            onDeleteRowSession: handleDeleteRowSession,
+            onDeleteWeighIn: handleDeleteWeighIn,
+            onDeleteWorkoutSession: handleDeleteWorkoutSession,
             onLogRowSession: handleLogRowSession,
             onLogWeighIn: handleLogWeighIn,
             onStartWorkout: (workout) => setLoggerState({ workout, startedAt: Date.now() }),
+            onUpdateSession: handleUpdateSession,
             screen
           })}
         </View>
@@ -224,6 +279,7 @@ function PugIronApp() {
           onSave={handleSaveSession}
         />
       ) : null}
+      <RankUpModal onDismiss={() => setRankUpRank(null)} rank={rankUpRank} />
     </View>
   );
 }
@@ -238,15 +294,23 @@ export default function App() {
 
 function renderScreen({
   appData,
+  onDeleteRowSession,
+  onDeleteWeighIn,
+  onDeleteWorkoutSession,
   onLogRowSession,
   onLogWeighIn,
   onStartWorkout,
+  onUpdateSession,
   screen
 }: {
   appData: AppData;
+  onDeleteRowSession: (rowSessionId: number) => Promise<void>;
+  onDeleteWeighIn: (weighInId: number) => Promise<void>;
+  onDeleteWorkoutSession: (sessionId: number) => Promise<void>;
   onLogRowSession: (rowSession: Omit<RowSession, "id" | "xp">) => Promise<void>;
   onLogWeighIn: (weighIn: Omit<WeighIn, "id" | "xp">) => Promise<void>;
   onStartWorkout: (workout: WorkoutSession["workout"]) => void;
+  onUpdateSession: (session: WorkoutSession & { id: number }) => Promise<void>;
   screen: Screen;
 }) {
   if (screen === "today") {
@@ -263,6 +327,11 @@ function renderScreen({
   if (screen === "history") {
     return (
       <HistoryScreen
+        exercises={appData.exercises}
+        onDeleteRowSession={onDeleteRowSession}
+        onDeleteWeighIn={onDeleteWeighIn}
+        onDeleteWorkoutSession={onDeleteWorkoutSession}
+        onUpdateSession={onUpdateSession}
         rowSessions={appData.rowSessions}
         sessions={appData.sessions}
         weighIns={appData.weighIns}

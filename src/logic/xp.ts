@@ -26,6 +26,24 @@ export const RANKS: Rank[] = [
 
 export function rankForXp(xpTotal: number) {
   const normalizedXp = Math.max(0, xpTotal);
+  const current = currentRankForXp(normalizedXp);
+  const next = nextRankForXp(normalizedXp);
+  const xpIntoLevel = xpIntoCurrentRank(normalizedXp);
+  const xpForLevel = next ? next.xp - current.xp : 0;
+  const progress = next ? xpIntoLevel / xpForLevel : 1;
+
+  return {
+    current,
+    next,
+    progress,
+    xpForLevel,
+    xpIntoLevel,
+    xpToNext: xpToNextRank(normalizedXp)
+  };
+}
+
+export function currentRankForXp(xpTotal: number): Rank {
+  const normalizedXp = Math.max(0, xpTotal);
   let current = RANKS[0];
 
   for (const rank of RANKS) {
@@ -34,13 +52,45 @@ export function rankForXp(xpTotal: number) {
     }
   }
 
-  const next = RANKS.find((rank) => rank.xp > normalizedXp) ?? null;
-  const progress = next ? (normalizedXp - current.xp) / (next.xp - current.xp) : 1;
+  return current;
+}
 
-  return {
-    current,
-    next,
-    progress,
-    xpToNext: next ? next.xp - normalizedXp : 0
-  };
+export function nextRankForXp(xpTotal: number): Rank | null {
+  const normalizedXp = Math.max(0, xpTotal);
+
+  return RANKS.find((rank) => rank.xp > normalizedXp) ?? null;
+}
+
+export function xpIntoCurrentRank(xpTotal: number): number {
+  const normalizedXp = Math.max(0, xpTotal);
+  const current = currentRankForXp(normalizedXp);
+
+  return normalizedXp - current.xp;
+}
+
+export function xpToNextRank(xpTotal: number): number {
+  const normalizedXp = Math.max(0, xpTotal);
+  const next = nextRankForXp(normalizedXp);
+
+  return next ? next.xp - normalizedXp : 0;
+}
+
+export function ranksGainedBetween(previousXpTotal: number, nextXpTotal: number): Rank[] {
+  const previous = Math.max(0, previousXpTotal);
+  const next = Math.max(0, nextXpTotal);
+
+  if (next <= previous) {
+    return [];
+  }
+
+  return RANKS.filter((rank) => rank.xp > previous && rank.xp <= next);
+}
+
+export function highestRankGainedBetween(
+  previousXpTotal: number,
+  nextXpTotal: number
+): Rank | null {
+  const gained = ranksGainedBetween(previousXpTotal, nextXpTotal);
+
+  return gained[gained.length - 1] ?? null;
 }
