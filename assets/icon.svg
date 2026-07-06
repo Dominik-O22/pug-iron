@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Pug Iron app icon">
+  <rect width="1024" height="1024" rx="220" fill="#131C1A"/>
+  <rect x="78" y="78" width="868" height="868" rx="172" fill="none" stroke="#24332E" stroke-width="18"/>
+  <g fill="#6FD3C0">
+    <rect x="334" y="484" width="356" height="56" rx="28"/>
+    <rect x="266" y="392" width="88" height="240" rx="42"/>
+    <rect x="670" y="392" width="88" height="240" rx="42"/>
+    <rect x="188" y="426" width="98" height="172" rx="48" transform="rotate(-10 237 512)"/>
+    <rect x="738" y="426" width="98" height="172" rx="48" transform="rotate(10 787 512)"/>
+  </g>
+  <g fill="#131C1A" opacity="0.42">
+    <rect x="296" y="444" width="28" height="136" rx="14"/>
+    <rect x="700" y="444" width="28" height="136" rx="14"/>
+  </g>
+</svg>

@@ -1,6 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
 import { EXERCISE_DEFS } from "./plan";
+import type { BackupPayload, BackupSourceData } from "./logic/backup";
 import { XP_EVENTS } from "./logic/xp";
 import type {
   ExerciseDef,
@@ -68,6 +69,11 @@ type WeighInRow = {
 };
 
 type SettingValueRow = {
+  value: string;
+};
+
+type SettingRow = {
+  key: string;
   value: string;
 };
 
@@ -206,6 +212,31 @@ export async function listWeighIns(db: PugIronDb): Promise<WeighIn[]> {
   );
 
   return rows.map(mapWeighInRow);
+}
+
+export async function listSettings(db: PugIronDb): Promise<Setting[]> {
+  const rows = await db.getAllAsync<SettingRow>(
+    `SELECT key, value
+     FROM settings
+     ORDER BY key ASC;`
+  );
+
+  return rows.map((row) => ({
+    key: row.key,
+    value: parseJson<unknown>(row.value)
+  }));
+}
+
+export async function getBackupSourceData(db: PugIronDb): Promise<BackupSourceData> {
+  const [sessions, rows, weighins, exercises, settings] = await Promise.all([
+    listWorkoutSessions(db),
+    listRowSessions(db),
+    listWeighIns(db),
+    listExerciseDefs(db),
+    listSettings(db)
+  ]);
+
+  return { exercises, rows, sessions, settings, weighins };
 }
 
 export async function getLatestExerciseLogs(
@@ -455,6 +486,71 @@ export async function deleteWeighInKeepingXp(db: PugIronDb, id: number): Promise
   await db.runAsync(`DELETE FROM weighins WHERE id = ?;`, [id]);
 }
 
+export async function updateExerciseDefs(
+  db: PugIronDb,
+  exercises: ExerciseDef[]
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const exercise of exercises) {
+      await db.runAsync(
+        `UPDATE exercises
+         SET name = ?, workout = ?, ord = ?, sets = ?, rep_low = ?, rep_high = ?,
+             load_type = ?, increment_kg = ?, note = ?
+         WHERE id = ?;`,
+        [
+          exercise.name,
+          exercise.workout,
+          exercise.order,
+          exercise.sets,
+          exercise.repLow,
+          exercise.repHigh,
+          exercise.loadType,
+          exercise.incrementKg,
+          exercise.note,
+          exercise.id
+        ]
+      );
+    }
+  });
+}
+
+export async function replaceAllDataWithBackup(
+  db: PugIronDb,
+  backup: BackupPayload | BackupSourceData
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await clearAllTables(db);
+
+    for (const session of backup.sessions) {
+      await insertWorkoutSessionFromBackup(db, session);
+    }
+
+    for (const rowSession of backup.rows) {
+      await insertRowSessionFromBackup(db, rowSession);
+    }
+
+    for (const weighIn of backup.weighins) {
+      await insertWeighInFromBackup(db, weighIn);
+    }
+
+    for (const exercise of backup.exercises) {
+      await insertExerciseDefFromBackup(db, exercise);
+    }
+
+    for (const setting of backup.settings) {
+      await insertSettingValue(db, setting);
+    }
+  });
+}
+
+export async function wipeAllDataAndReseed(db: PugIronDb): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await clearAllTables(db);
+    await seedExerciseDefs(db, EXERCISE_DEFS);
+    await seedDefaultSettings(db);
+  });
+}
+
 async function runMigrations(db: PugIronDb): Promise<void> {
   let currentVersion = await getUserVersion(db);
 
@@ -500,6 +596,116 @@ async function seedDefaultSettings(db: PugIronDb): Promise<void> {
   for (const setting of DEFAULT_SETTINGS) {
     await db.runAsync(INSERT_SETTING_SQL, [setting.key, JSON.stringify(setting.value)]);
   }
+}
+
+async function clearAllTables(db: PugIronDb): Promise<void> {
+  await db.execAsync(`
+DELETE FROM sessions;
+DELETE FROM rows;
+DELETE FROM weighins;
+DELETE FROM exercises;
+DELETE FROM settings;
+`);
+}
+
+async function insertWorkoutSessionFromBackup(
+  db: PugIronDb,
+  session: WorkoutSession
+): Promise<void> {
+  const values = [
+    session.date,
+    session.workout,
+    JSON.stringify(session.entries),
+    JSON.stringify(session.progressionEvents),
+    session.startedAt,
+    session.finishedAt ?? null,
+    session.xp
+  ];
+
+  if (typeof session.id === "number") {
+    await db.runAsync(
+      `INSERT INTO sessions (id, date, workout, entries, progression_events, started_at, finished_at, xp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+      [session.id, ...values]
+    );
+    return;
+  }
+
+  await db.runAsync(
+    `INSERT INTO sessions (date, workout, entries, progression_events, started_at, finished_at, xp)
+     VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    values
+  );
+}
+
+async function insertRowSessionFromBackup(
+  db: PugIronDb,
+  rowSession: RowSession
+): Promise<void> {
+  const values = [rowSession.date, rowSession.minutes, rowSession.meters ?? null, rowSession.xp];
+
+  if (typeof rowSession.id === "number") {
+    await db.runAsync(
+      `INSERT INTO rows (id, date, minutes, meters, xp)
+       VALUES (?, ?, ?, ?, ?);`,
+      [rowSession.id, ...values]
+    );
+    return;
+  }
+
+  await db.runAsync(
+    `INSERT INTO rows (date, minutes, meters, xp)
+     VALUES (?, ?, ?, ?);`,
+    values
+  );
+}
+
+async function insertWeighInFromBackup(db: PugIronDb, weighIn: WeighIn): Promise<void> {
+  const values = [weighIn.date, weighIn.kg, weighIn.xp];
+
+  if (typeof weighIn.id === "number") {
+    await db.runAsync(
+      `INSERT INTO weighins (id, date, kg, xp)
+       VALUES (?, ?, ?, ?);`,
+      [weighIn.id, ...values]
+    );
+    return;
+  }
+
+  await db.runAsync(
+    `INSERT INTO weighins (date, kg, xp)
+     VALUES (?, ?, ?);`,
+    values
+  );
+}
+
+async function insertExerciseDefFromBackup(
+  db: PugIronDb,
+  exercise: ExerciseDef
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      exercise.id,
+      exercise.name,
+      exercise.workout,
+      exercise.order,
+      exercise.sets,
+      exercise.repLow,
+      exercise.repHigh,
+      exercise.loadType,
+      exercise.incrementKg,
+      exercise.note
+    ]
+  );
+}
+
+async function insertSettingValue(db: PugIronDb, setting: Setting): Promise<void> {
+  await db.runAsync(`INSERT INTO settings (key, value) VALUES (?, ?);`, [
+    setting.key,
+    JSON.stringify(setting.value)
+  ]);
 }
 
 async function getSettingValue<T>(db: PugIronDb, key: string, fallback: T): Promise<T> {

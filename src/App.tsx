@@ -4,7 +4,6 @@ import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-import { Panel } from "./components/Panel";
 import { RankProgressLine } from "./components/RankProgressLine";
 import { RankUpModal } from "./components/RankUpModal";
 import { TabBar, type Screen } from "./components/TabBar";
@@ -32,6 +31,7 @@ import {
 import { labelTracking, localDateString } from "./lib/format";
 import { HistoryScreen } from "./screens/HistoryScreen";
 import { ProgressScreen } from "./screens/ProgressScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
 import { highestRankGainedBetween, type Rank } from "./logic/xp";
@@ -233,7 +233,7 @@ function PugIronApp() {
     [db, loadAppData]
   );
 
-  if (!fontsLoaded || !appData) {
+  if (!fontsLoaded || !appData || !db) {
     return (
       <View className="flex-1 bg-bg">
         <StatusBar style="light" />
@@ -257,6 +257,8 @@ function PugIronApp() {
         <View className="flex-1 p-5">
           {renderScreen({
             appData,
+            db,
+            onDataChanged: () => loadAppData(db),
             onDeleteRowSession: handleDeleteRowSession,
             onDeleteWeighIn: handleDeleteWeighIn,
             onDeleteWorkoutSession: handleDeleteWorkoutSession,
@@ -294,6 +296,8 @@ export default function App() {
 
 function renderScreen({
   appData,
+  db,
+  onDataChanged,
   onDeleteRowSession,
   onDeleteWeighIn,
   onDeleteWorkoutSession,
@@ -304,6 +308,8 @@ function renderScreen({
   screen
 }: {
   appData: AppData;
+  db: PugIronDb;
+  onDataChanged: () => Promise<void>;
   onDeleteRowSession: (rowSessionId: number) => Promise<void>;
   onDeleteWeighIn: (weighInId: number) => Promise<void>;
   onDeleteWorkoutSession: (sessionId: number) => Promise<void>;
@@ -343,14 +349,5 @@ function renderScreen({
     return <ProgressScreen appData={appData} />;
   }
 
-  return (
-    <Panel eyebrow="settings bay" className="min-h-[180px]">
-      <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">
-        Offline controls
-      </Text>
-      <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
-        Backup, import, and exercise editing controls live here.
-      </Text>
-    </Panel>
-  );
+  return <SettingsScreen db={db} exercises={appData.exercises} onDataChanged={onDataChanged} />;
 }
