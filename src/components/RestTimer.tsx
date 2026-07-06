@@ -31,17 +31,26 @@ export function RestTimer({ onDismiss, rest }: { onDismiss: () => void; rest: Re
   }, [remainingMs, rest.startedAt]);
 
   return (
-    <Pressable accessibilityRole="button" className="rounded-lg border border-line bg-panel p-5" onPress={onDismiss}>
-      <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
-        rest
-      </Text>
-      <Num weight="medium" className="mt-2 text-[48px] leading-[56px] text-mint">
-        {formatRestTime(remainingMs)}
-      </Num>
-      <View className="mt-4 h-1 overflow-hidden rounded-full bg-panel-2">
-        <View className="ml-auto h-full bg-mint" style={{ width: `${progress * 100}%` }} />
+    <Pressable
+      accessibilityHint="Tap to clear the rest timer"
+      accessibilityRole="button"
+      className="min-h-[64px] justify-center rounded-lg border border-line bg-panel px-4 py-2"
+      onPress={onDismiss}
+    >
+      <View className="flex-row items-center gap-4">
+        <View>
+          <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+            rest
+          </Text>
+          <Text className="font-barlow text-[11px] text-text-dim">tap to clear</Text>
+        </View>
+        <Num weight="medium" className="text-[40px] leading-[48px] text-mint">
+          {formatRestTime(remainingMs)}
+        </Num>
+        <View className="h-1 flex-1 overflow-hidden rounded-full bg-panel-2">
+          <View className="ml-auto h-full bg-mint" style={{ width: `${progress * 100}%` }} />
+        </View>
       </View>
-      <Text className="mt-3 font-barlow text-[13px] text-text-dim">Tap to clear.</Text>
     </Pressable>
   );
 }

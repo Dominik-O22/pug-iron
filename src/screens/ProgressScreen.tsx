@@ -202,7 +202,7 @@ function ExerciseProgressPanel({
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
-                className={`min-h-[56px] justify-center rounded-lg border px-4 ${
+                className={`min-h-[56px] max-w-[200px] justify-center rounded-lg border px-4 ${
                   active ? "border-mint bg-petrol" : "border-line bg-panel-2"
                 }`}
                 key={exercise.id}

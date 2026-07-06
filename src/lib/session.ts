@@ -1,6 +1,6 @@
 import type { ExerciseDef, ExerciseLog, RowSession, SetEntry, WeighIn, WorkoutSession } from "../types";
 import type { ProgressionTarget } from "../logic/progression";
-import { weekStartString } from "./format";
+import { formatWeight, weekStartString } from "./format";
 
 export type DraftSet = SetEntry & {
   logged: boolean;
@@ -55,6 +55,27 @@ export function buildLoggedEntries(draftExercises: DraftExercise[]): ExerciseLog
 
 export function countLoggedSets(entries: ExerciseLog[]): number {
   return entries.reduce((total, entry) => total + entry.sets.length, 0);
+}
+
+export type SetProgressSegment = {
+  label: string;
+  state: "active" | "logged" | "pending";
+};
+
+// One PM5-style segment per set: logged sets read back their numbers, the
+// current set carries a pointer, untouched sets stay a quiet dash.
+export function buildSetProgressSegments(
+  sets: DraftSet[],
+  activeSetIndex: number
+): SetProgressSegment[] {
+  return sets.map((set, index) => ({
+    label: set.logged
+      ? `S${index + 1} ${formatWeight(set.weight)}×${set.reps} ✓`
+      : index === activeSetIndex
+        ? `S${index + 1} ▸`
+        : `S${index + 1} —`,
+    state: index === activeSetIndex ? "active" : set.logged ? "logged" : "pending"
+  }));
 }
 
 export function groupSessionsByWeek(sessions: WorkoutSession[]) {

@@ -96,14 +96,16 @@ export function HistoryScreen({
 
   if (sessions.length === 0 && rowSessions.length === 0 && weighIns.length === 0) {
     return (
-      <Panel eyebrow="history log" className="min-h-[180px]">
-        <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">
-          Workouts, rows, and weigh-ins appear here by week.
-        </Text>
-        <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
-          Each row will show the date and the main numbers from that entry.
-        </Text>
-      </Panel>
+      <View className="flex-1 justify-center">
+        <Panel eyebrow="history log">
+          <Text className="font-barlow-semibold text-[24px] leading-[29px] text-text">
+            Workouts, rows, and weigh-ins appear here by week.
+          </Text>
+          <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
+            Each row will show the date and the main numbers from that entry.
+          </Text>
+        </Panel>
+      </View>
     );
   }
 

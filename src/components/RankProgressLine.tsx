@@ -13,19 +13,21 @@ export function RankProgressLine({ className, xpTotal, ...props }: RankProgressL
 
   return (
     <View {...props} className={className}>
-      <View className="flex-row items-baseline justify-between gap-4">
+      {/* pr-16 keeps the XP readout clear of the floating dev-menu bubble that
+          Expo Go pins to the top-right corner; harmless in release builds. */}
+      <View className="flex-row items-baseline justify-between gap-4 pr-16">
         <Text className="flex-1 font-barlow-bold text-[18px] uppercase leading-[22px] text-text">
           {rankState.current.name}
         </Text>
         {rankState.next ? (
-          <View className="flex-row items-baseline">
+          <View className="shrink-0 flex-row items-baseline">
             <Num weight="medium" className="text-[13px] text-mint">
               {rankState.xpToNext}
             </Num>
             <Text className="font-barlow text-[13px] text-text-dim"> XP to next</Text>
           </View>
         ) : (
-          <Text className="font-barlow text-[13px] text-text-dim">Top rank</Text>
+          <Text className="shrink-0 font-barlow text-[13px] text-text-dim">Top rank</Text>
         )}
       </View>
       <View className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2">
