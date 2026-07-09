@@ -145,15 +145,12 @@ export function TodayScreen({
           <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
             warm up
           </Text>
-          <View className="mt-2 flex-row flex-wrap items-center">
-            <Num className="text-[16px] text-text">4</Num>
-            <Text className="font-barlow text-[16px] leading-[22px] text-text"> min easy row, then </Text>
-            <Num className="text-[16px] text-text">1</Num>
-            <Text className="font-barlow text-[16px] leading-[22px] text-text">
-              {" "}
-              light set for the first two moves.
-            </Text>
-          </View>
+          {/* Nested Text keeps the sentence flowing as one paragraph — sibling
+              flex items used to wrap mid-sentence. */}
+          <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text">
+            <Num className="text-[16px] text-text">4</Num> min easy row, then{" "}
+            <Num className="text-[16px] text-text">1</Num> light set for the first two moves.
+          </Text>
         </View>
 
         <Pressable
@@ -335,11 +332,19 @@ function ExerciseSchemeRow({
     <View className="flex-row items-center justify-between gap-3 rounded-lg border border-line bg-panel-2 p-4">
       <View className="flex-1">
         <Text className="font-barlow-semibold text-[18px] leading-[22px] text-text">{exercise.name}</Text>
-        <InstructionLine
-          className="mt-1 text-[15px] leading-[20px] text-text"
-          instruction={target.instruction}
-          numberClassName="text-[15px] text-text"
-        />
+        {target.rule === "first-time" ? (
+          // The full pick-a-weight hint lives in the logger's autopilot panel;
+          // repeating it on every card drowned the overview.
+          <Text className="mt-1 font-barlow text-[15px] leading-[20px] text-text">
+            first time — pick your weight
+          </Text>
+        ) : (
+          <InstructionLine
+            className="mt-1 text-[15px] leading-[20px] text-text"
+            instruction={target.instruction}
+            numberClassName="text-[15px] text-text"
+          />
+        )}
         {exercise.note ? (
           <Text className="mt-1 font-barlow text-[13px] leading-[18px] text-text-dim">
             {exercise.note}
@@ -360,9 +365,9 @@ function ExerciseSchemeRow({
             {exercise.repHigh}
           </Num>
         </View>
-        <Text className="font-barlow text-[13px] text-text-dim">
-          {exercise.loadType === "assist" ? "assist" : "kg"}
-        </Text>
+        {exercise.loadType === "assist" ? (
+          <Text className="font-barlow text-[13px] text-text-dim">assist</Text>
+        ) : null}
       </View>
     </View>
   );

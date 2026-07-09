@@ -9,7 +9,7 @@ import { InstructionLine } from "../components/InstructionLine";
 import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { RestTimer } from "../components/RestTimer";
-import { Stepper } from "../components/Stepper";
+import { CompactStepper } from "../components/Stepper";
 import {
   abbreviateExerciseName,
   formatVolume,
@@ -19,6 +19,7 @@ import {
 } from "../lib/format";
 import {
   buildLoggedEntries,
+  buildSetProgressSegments,
   countLoggedSets,
   type DraftExercise,
   type RestState
@@ -130,9 +131,21 @@ export function WorkoutLoggerModal({
   );
 
   const logActiveSet = useCallback(() => {
-    const updatedSets = activeDraft.sets.map((set, setIndex) =>
-      setIndex === activeSetIndex ? { ...set, logged: true } : set
-    );
+    const loggedWeight = activeSet.weight;
+    const updatedSets = activeDraft.sets.map((set, setIndex) => {
+      if (setIndex === activeSetIndex) {
+        return { ...set, logged: true };
+      }
+
+      // Carry the weight just lifted onto later sets still sitting at the empty
+      // default, so a first-time exercise doesn't reset to 0 kg every set. A set
+      // the user already dialed to a different weight is left untouched.
+      if (setIndex > activeSetIndex && !set.logged && set.weight === 0 && loggedWeight > 0) {
+        return { ...set, weight: loggedWeight };
+      }
+
+      return set;
+    });
     const nextSetIndex = updatedSets.findIndex((set) => !set.logged);
 
     setDraftExercises((current) =>
@@ -152,7 +165,7 @@ export function WorkoutLoggerModal({
     if (exerciseIndex < draftExercises.length - 1) {
       setExerciseIndex((current) => current + 1);
     }
-  }, [activeDraft.sets, activeSetIndex, draftExercises.length, exerciseIndex]);
+  }, [activeDraft.sets, activeSet.weight, activeSetIndex, draftExercises.length, exerciseIndex]);
 
   const confirmDiscard = useCallback(() => {
     // A save in flight is already committing; don't offer to walk away from it.
@@ -259,8 +272,11 @@ export function WorkoutLoggerModal({
             />
           ) : (
             <>
-              <ScrollView className="flex-1" contentContainerClassName="gap-4 p-5 pb-6">
-                <WarmupChecklist warmupExercises={warmupExercises} />
+              <ScrollView className="flex-1" contentContainerClassName="gap-3 p-5 pb-6">
+                <WarmupStrip
+                  hasLoggedAnySet={loggedSetCount > 0}
+                  warmupExercises={warmupExercises}
+                />
 
                 <ExerciseOverview
                   draftExercises={draftExercises}
@@ -269,52 +285,25 @@ export function WorkoutLoggerModal({
                 />
 
                 <Panel eyebrow="active exercise">
-                  <View className="flex-row items-start justify-between gap-4">
-                    <View className="flex-1">
-                      <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">
-                        {activeDraft.exercise.name}
-                      </Text>
-                      <View className="mt-2 flex-row items-center">
-                        <Text className="font-barlow text-[16px] text-text-dim">Set </Text>
-                        <Num className="text-[16px] text-text-dim">{activeSetIndex + 1}</Num>
-                        <Text className="font-barlow text-[16px] text-text-dim"> of </Text>
-                        <Num className="text-[16px] text-text-dim">{activeDraft.exercise.sets}</Num>
-                      </View>
-                    </View>
-                    <View className="min-h-[56px] min-w-[56px] items-center justify-center rounded-lg border border-line bg-panel-2">
-                      <Num weight="medium" className="text-[18px] text-mint">
-                        {exerciseIndex + 1}/{draftExercises.length}
-                      </Num>
-                    </View>
-                  </View>
-
-                  <View className="mt-4 rounded-lg border border-line bg-panel-2 p-4">
+                  <View className="flex-row items-baseline justify-between gap-3">
                     <Text
-                      className="font-mono-medium text-[11px] uppercase text-text-dim"
-                      style={labelTracking}
+                      className="flex-1 font-barlow-bold text-[24px] leading-[28px] text-text"
+                      numberOfLines={1}
                     >
-                      autopilot
+                      {activeDraft.exercise.name}
                     </Text>
-                    <InstructionLine
-                      className="mt-1 text-[16px] leading-[22px] text-text"
-                      instruction={activeDraft.instruction}
-                      numberClassName="text-[16px] text-text"
-                    />
+                    <Num weight="medium" className="text-[16px] text-mint">
+                      {exerciseIndex + 1}/{draftExercises.length}
+                    </Num>
+                  </View>
+                  <View className="mt-1 flex-row items-center">
+                    <Text className="font-barlow text-[13px] text-text-dim">Set </Text>
+                    <Num className="text-[13px] text-text-dim">{activeSetIndex + 1}</Num>
+                    <Text className="font-barlow text-[13px] text-text-dim"> of </Text>
+                    <Num className="text-[13px] text-text-dim">{activeDraft.exercise.sets}</Num>
                   </View>
 
-                  {activeDraft.exercise.cues.length > 0 ? (
-                    <FormCuesPanel
-                      cues={activeDraft.exercise.cues}
-                      onToggle={() =>
-                        setFormOpen((current) =>
-                          current.map((value, index) => (index === exerciseIndex ? !value : value))
-                        )
-                      }
-                      open={formOpen[exerciseIndex] ?? false}
-                    />
-                  ) : null}
-
-                  <SetRows
+                  <SetProgressLine
                     activeSetIndex={activeSetIndex}
                     draftExercise={activeDraft}
                     onSelectSet={(setIndex) =>
@@ -324,40 +313,66 @@ export function WorkoutLoggerModal({
                     }
                   />
 
-                  <View className="mt-5 gap-4">
-                    <Stepper
-                      formatValue={formatWeight}
-                      label={activeDraft.exercise.loadType === "assist" ? "Assist level" : "Weight"}
-                      min={0}
-                      onChange={(weight) => updateActiveSet({ weight })}
-                      step={activeDraft.exercise.loadType === "assist" ? 1 : activeDraft.exercise.incrementKg}
-                      unit={activeDraft.exercise.loadType === "assist" ? "band" : "kg"}
-                      value={activeSet.weight}
-                    />
-                    <Stepper
-                      formatValue={(value) => String(value)}
-                      label="Reps"
-                      min={0}
-                      onChange={(reps) => updateActiveSet({ reps })}
-                      step={1}
-                      value={activeSet.reps}
-                    />
-                  </View>
+                  <AutopilotPanel
+                    cues={activeDraft.exercise.cues}
+                    formOpen={formOpen[exerciseIndex] ?? false}
+                    instruction={activeDraft.instruction}
+                    onToggleForm={() =>
+                      setFormOpen((current) =>
+                        current.map((value, index) => (index === exerciseIndex ? !value : value))
+                      )
+                    }
+                  />
 
+                  <View className="mt-4 flex-row gap-3">
+                    <View className="flex-1">
+                      <CompactStepper
+                        formatValue={formatWeight}
+                        label={activeDraft.exercise.loadType === "assist" ? "Assist" : "Weight"}
+                        min={0}
+                        onChange={(weight) => updateActiveSet({ weight })}
+                        step={
+                          activeDraft.exercise.loadType === "assist"
+                            ? 1
+                            : activeDraft.exercise.incrementKg
+                        }
+                        unit={activeDraft.exercise.loadType === "assist" ? "band" : "kg"}
+                        value={activeSet.weight}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <CompactStepper
+                        formatValue={(value) => String(value)}
+                        label="Reps"
+                        min={0}
+                        onChange={(reps) => updateActiveSet({ reps })}
+                        step={1}
+                        value={activeSet.reps}
+                      />
+                    </View>
+                  </View>
+                </Panel>
+              </ScrollView>
+
+              <View className="border-t border-line">
+                <View className="px-5 pt-3">
                   <Pressable
                     accessibilityRole="button"
-                    className="mt-5 min-h-[56px] items-center justify-center rounded-lg bg-mint px-5"
+                    className="min-h-[56px] items-center justify-center rounded-lg bg-mint px-5"
                     onPress={logActiveSet}
                   >
                     <Text className="font-barlow-bold text-[18px] uppercase text-bg">Log set</Text>
                   </Pressable>
-                </Panel>
+                </View>
 
-                {rest ? <RestTimer rest={rest} onDismiss={() => setRest(null)} /> : null}
-              </ScrollView>
+                {rest ? (
+                  <View className="px-5 pt-3">
+                    <RestTimer rest={rest} onDismiss={() => setRest(null)} />
+                  </View>
+                ) : null}
 
-              <View className="border-t border-line p-5">
-                <View className="flex-row gap-3">
+                <View className="p-5 pt-3">
+                  <View className="flex-row gap-3">
                   <Pressable
                     accessibilityRole="button"
                     className="min-h-[56px] flex-1 items-center justify-center rounded-lg border border-line bg-panel-2 px-4"
@@ -386,6 +401,7 @@ export function WorkoutLoggerModal({
                     <Text className="font-barlow-bold text-[16px] uppercase text-bg">Finish</Text>
                   </Pressable>
                 </View>
+                </View>
               </View>
             </>
           )}
@@ -396,19 +412,70 @@ export function WorkoutLoggerModal({
   );
 }
 
-function WarmupChecklist({ warmupExercises }: { warmupExercises: ExerciseDef[] }) {
+function WarmupStrip({
+  hasLoggedAnySet,
+  warmupExercises
+}: {
+  hasLoggedAnySet: boolean;
+  warmupExercises: ExerciseDef[];
+}) {
   const items = useMemo(
-    () => ["4 min easy row", ...warmupExercises.map((exercise) => `Light set · ${exercise.name}`)],
+    () => [
+      "ROW 4 MIN",
+      ...warmupExercises.map((exercise) => abbreviateExerciseName(exercise.name))
+    ],
     [warmupExercises]
   );
   const [checked, setChecked] = useState<boolean[]>(() => items.map(() => false));
+  const [collapsed, setCollapsed] = useState(false);
+  const autoCollapsedRef = useRef(false);
+  const checkedCount = checked.filter(Boolean).length;
+  const allChecked = checkedCount === items.length;
+  const shouldAutoCollapse = allChecked || hasLoggedAnySet;
+
+  // Collapse itself once warm-up is done or lifting has started — but only once,
+  // so a deliberate re-expand is respected.
+  useEffect(() => {
+    if (shouldAutoCollapse && !autoCollapsedRef.current) {
+      autoCollapsedRef.current = true;
+      setCollapsed(true);
+    }
+  }, [shouldAutoCollapse]);
+
+  if (collapsed) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: false }}
+        className="min-h-[44px] flex-row items-center justify-between rounded-xl border border-line bg-panel px-4"
+        onPress={() => setCollapsed(false)}
+      >
+        <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+          warm up
+        </Text>
+        <View className="flex-row items-center gap-1">
+          <Num weight="medium" className={`text-[13px] ${allChecked ? "text-mint" : "text-text-dim"}`}>
+            {checkedCount}/{items.length}
+          </Num>
+          {allChecked ? <Text className="font-barlow-semibold text-[13px] text-mint">✓</Text> : null}
+        </View>
+      </Pressable>
+    );
+  }
 
   return (
-    <Panel eyebrow="warm up">
-      <Text className="font-barlow text-[16px] leading-[22px] text-text-dim">
-        Optional. Tap what you have done.
-      </Text>
-      <View className="mt-4 gap-2">
+    <View className="rounded-xl border border-line bg-panel px-3 py-2">
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: true }}
+          className="min-h-[56px] justify-center pr-1"
+          onPress={() => setCollapsed(true)}
+        >
+          <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+            warm up
+          </Text>
+        </Pressable>
         {items.map((item, index) => {
           const isChecked = checked[index] ?? false;
 
@@ -416,7 +483,9 @@ function WarmupChecklist({ warmupExercises }: { warmupExercises: ExerciseDef[] }
             <Pressable
               accessibilityRole="checkbox"
               accessibilityState={{ checked: isChecked }}
-              className="min-h-[56px] flex-row items-center gap-3 rounded-lg border border-line bg-panel-2 px-4"
+              className={`min-h-[56px] flex-1 items-center justify-center rounded-lg border px-1 ${
+                isChecked ? "border-mint bg-mint" : "border-line bg-panel-2"
+              }`}
               key={item}
               onPress={() =>
                 setChecked((current) =>
@@ -424,52 +493,106 @@ function WarmupChecklist({ warmupExercises }: { warmupExercises: ExerciseDef[] }
                 )
               }
             >
-              <View
-                className={`h-7 w-7 items-center justify-center rounded border ${
-                  isChecked ? "border-mint bg-mint" : "border-line bg-bg"
-                }`}
-              >
-                {isChecked ? <Text className="font-barlow-bold text-[16px] text-bg">✓</Text> : null}
-              </View>
-              <Text
-                className={`flex-1 font-barlow-semibold text-[16px] leading-[22px] ${
-                  isChecked ? "text-mint" : "text-text"
-                }`}
+              <Num
+                weight="medium"
+                className={`text-[11px] uppercase ${isChecked ? "text-bg" : "text-text-dim"}`}
               >
                 {item}
-              </Text>
+              </Num>
             </Pressable>
           );
         })}
       </View>
-    </Panel>
+    </View>
   );
 }
 
-function FormCuesPanel({
+function SetProgressLine({
+  activeSetIndex,
+  draftExercise,
+  onSelectSet
+}: {
+  activeSetIndex: number;
+  draftExercise: DraftExercise;
+  onSelectSet: (setIndex: number) => void;
+}) {
+  const segments = buildSetProgressSegments(draftExercise.sets, activeSetIndex);
+
+  return (
+    <View className="mt-3 flex-row flex-wrap items-center rounded-lg border border-line bg-panel-2 px-2">
+      {segments.map((segment, index) => {
+        const textClass =
+          segment.state === "active"
+            ? "text-mint"
+            : segment.state === "logged"
+              ? "text-text"
+              : "text-text-dim";
+
+        return (
+          <View className="flex-row items-center" key={`${draftExercise.exercise.id}-${index}`}>
+            {index > 0 ? <Text className="font-mono text-[13px] text-text-dim"> · </Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              className={`min-h-[44px] justify-center px-2 ${
+                segment.state === "active" ? "rounded bg-petrol" : ""
+              }`}
+              onPress={() => onSelectSet(index)}
+            >
+              <Num weight="medium" className={`text-[13px] ${textClass}`}>
+                {segment.label}
+              </Num>
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function AutopilotPanel({
   cues,
-  onToggle,
-  open
+  formOpen,
+  instruction,
+  onToggleForm
 }: {
   cues: string[];
-  onToggle: () => void;
-  open: boolean;
+  formOpen: boolean;
+  instruction: string;
+  onToggleForm: () => void;
 }) {
   return (
-    <View className="mt-4 rounded-lg border border-line bg-panel-2">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        className="min-h-[56px] flex-row items-center justify-between px-4"
-        onPress={onToggle}
-      >
-        <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
-          form
+    <View className="mt-3 rounded-lg border border-line bg-panel-2 px-4 pb-3">
+      <View className="flex-row items-center justify-between">
+        <Text
+          className="pt-3 font-mono-medium text-[11px] uppercase text-text-dim"
+          style={labelTracking}
+        >
+          autopilot
         </Text>
-        <Text className="font-mono-medium text-[16px] text-mint">{open ? "–" : "+"}</Text>
-      </Pressable>
-      {open ? (
-        <View className="gap-2 px-4 pb-4">
+        {cues.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: formOpen }}
+            className="min-h-[44px] flex-row items-center gap-2 pl-4"
+            onPress={onToggleForm}
+          >
+            <Text
+              className="font-mono-medium text-[11px] uppercase text-text-dim"
+              style={labelTracking}
+            >
+              form
+            </Text>
+            <Text className="font-mono-medium text-[16px] text-mint">{formOpen ? "–" : "+"}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <InstructionLine
+        className="mt-1 text-[16px] leading-[22px] text-text"
+        instruction={instruction}
+        numberClassName="text-[16px] text-text"
+      />
+      {formOpen ? (
+        <View className="mt-2 gap-1">
           {cues.map((cue) => (
             <View className="flex-row gap-2" key={cue}>
               <Text className="font-barlow-semibold text-[16px] leading-[22px] text-mint">·</Text>
@@ -529,55 +652,6 @@ function ExerciseOverview({
         })}
       </View>
     </ScrollView>
-  );
-}
-
-function SetRows({
-  activeSetIndex,
-  draftExercise,
-  onSelectSet
-}: {
-  activeSetIndex: number;
-  draftExercise: DraftExercise;
-  onSelectSet: (setIndex: number) => void;
-}) {
-  return (
-    <View className="mt-5 gap-2">
-      {draftExercise.sets.map((set, index) => {
-        const isActive = index === activeSetIndex;
-
-        return (
-          <Pressable
-            accessibilityRole="button"
-            className={`min-h-[56px] flex-row items-center justify-between rounded-lg border px-4 ${
-              isActive ? "border-mint bg-petrol" : "border-line bg-panel-2"
-            }`}
-            key={`${draftExercise.exercise.id}-${index}`}
-            onPress={() => onSelectSet(index)}
-          >
-            <View className="flex-row items-center">
-              <Text className="font-barlow-semibold text-[16px] text-text">Set </Text>
-              <Num className="text-[16px] text-text">{index + 1}</Num>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Num weight="medium" className="text-[16px] text-mint">
-                {formatWeight(set.weight)}
-              </Num>
-              <Text className="font-barlow text-[16px] text-text-dim">
-                {draftExercise.exercise.loadType === "assist" ? "band" : "kg"}
-              </Text>
-              <Num weight="medium" className="text-[16px] text-mint">
-                {set.reps}
-              </Num>
-              <Text className="font-barlow text-[16px] text-text-dim">reps</Text>
-              <Text className={`font-barlow-semibold text-[13px] ${set.logged ? "text-mint" : "text-text-dim"}`}>
-                {set.logged ? "logged" : "ready"}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
   );
 }
 

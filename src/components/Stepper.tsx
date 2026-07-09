@@ -4,15 +4,7 @@ import { Pressable, Text, View } from "react-native";
 import { labelTracking, roundStepperValue } from "../lib/format";
 import { Num } from "./Num";
 
-export function Stepper({
-  formatValue,
-  label,
-  min,
-  onChange,
-  step,
-  unit,
-  value
-}: {
+type StepperProps = {
   formatValue: (value: number) => string;
   label: string;
   min: number;
@@ -20,7 +12,84 @@ export function Stepper({
   step: number;
   unit?: string;
   value: number;
-}) {
+};
+
+export function Stepper({ formatValue, label, min, onChange, step, unit, value }: StepperProps) {
+  const { decrement, increment } = useStepping({ min, onChange, step, value });
+
+  return (
+    <View>
+      <Text className="mb-2 font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+        {label}
+      </Text>
+      <View className="flex-row items-center gap-3">
+        <RepeatButton
+          accessibilityLabel={`Decrease ${label}`}
+          className="h-[64px] w-[64px]"
+          label="-"
+          onPress={decrement}
+        />
+        <View className="min-h-[64px] flex-1 items-center justify-center rounded-lg border border-line bg-panel-2 px-4">
+          <View className="flex-row items-baseline">
+            <Num weight="medium" className="text-[40px] leading-[48px] text-mint">
+              {formatValue(value)}
+            </Num>
+            {unit ? <Text className="ml-2 font-barlow text-[16px] text-text-dim">{unit}</Text> : null}
+          </View>
+        </View>
+        <RepeatButton
+          accessibilityLabel={`Increase ${label}`}
+          className="h-[64px] w-[64px]"
+          label="+"
+          onPress={increment}
+        />
+      </View>
+    </View>
+  );
+}
+
+// Two-column logger layout: label, big value, then a -/+ row underneath.
+// Same repeat-on-hold behavior; buttons stay >=56px for a tired thumb.
+export function CompactStepper({ formatValue, label, min, onChange, step, unit, value }: StepperProps) {
+  const { decrement, increment } = useStepping({ min, onChange, step, value });
+
+  return (
+    <View>
+      <Text className="mb-1 font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+        {label}
+      </Text>
+      <View className="min-h-[52px] items-center justify-center rounded-lg border border-line bg-panel-2 px-2">
+        <View className="flex-row items-baseline">
+          <Num weight="medium" className="text-[36px] leading-[44px] text-mint">
+            {formatValue(value)}
+          </Num>
+          {unit ? <Text className="ml-1 font-barlow text-[13px] text-text-dim">{unit}</Text> : null}
+        </View>
+      </View>
+      <View className="mt-2 flex-row gap-2">
+        <RepeatButton
+          accessibilityLabel={`Decrease ${label}`}
+          className="h-[56px] flex-1"
+          label="-"
+          onPress={decrement}
+        />
+        <RepeatButton
+          accessibilityLabel={`Increase ${label}`}
+          className="h-[56px] flex-1"
+          label="+"
+          onPress={increment}
+        />
+      </View>
+    </View>
+  );
+}
+
+function useStepping({
+  min,
+  onChange,
+  step,
+  value
+}: Pick<StepperProps, "min" | "onChange" | "step" | "value">) {
   const valueRef = useRef(value);
 
   useEffect(() => {
@@ -39,33 +108,17 @@ export function Stepper({
   const decrement = useCallback(() => changeBy(-step), [changeBy, step]);
   const increment = useCallback(() => changeBy(step), [changeBy, step]);
 
-  return (
-    <View>
-      <Text className="mb-2 font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
-        {label}
-      </Text>
-      <View className="flex-row items-center gap-3">
-        <RepeatButton accessibilityLabel={`Decrease ${label}`} label="-" onPress={decrement} />
-        <View className="min-h-[64px] flex-1 items-center justify-center rounded-lg border border-line bg-panel-2 px-4">
-          <View className="flex-row items-baseline">
-            <Num weight="medium" className="text-[40px] leading-[48px] text-mint">
-              {formatValue(value)}
-            </Num>
-            {unit ? <Text className="ml-2 font-barlow text-[16px] text-text-dim">{unit}</Text> : null}
-          </View>
-        </View>
-        <RepeatButton accessibilityLabel={`Increase ${label}`} label="+" onPress={increment} />
-      </View>
-    </View>
-  );
+  return { decrement, increment };
 }
 
 function RepeatButton({
   accessibilityLabel,
+  className,
   label,
   onPress
 }: {
   accessibilityLabel: string;
+  className: string;
   label: string;
   onPress: () => void;
 }) {
@@ -85,7 +138,7 @@ function RepeatButton({
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      className="h-[64px] w-[64px] items-center justify-center rounded-lg bg-mint"
+      className={`items-center justify-center rounded-lg bg-mint ${className}`}
       delayLongPress={250}
       onLongPress={() => {
         longPressingRef.current = true;
