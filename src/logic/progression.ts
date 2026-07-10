@@ -40,6 +40,9 @@ type ProgressionExercise = Pick<
 const FIRST_TIME_HINT =
   "first time: pick a weight where you'd fail 1–2 reps past the top of the range";
 
+// Assist scale 0–2; 2 = purple band (most help) — where a ladder graduate starts.
+const FIRST_TIME_ASSIST = 2;
+
 export function deriveProgressionTarget(
   exercise: ProgressionExercise,
   previousLog?: ExerciseLog | null
@@ -69,6 +72,20 @@ export function deriveProgressionTarget(
         loadType: exercise.loadType,
         progressionEvent: null,
         rule: "hold-load",
+        sets
+      };
+    }
+
+    if (exercise.loadType === "assist") {
+      const sets = buildSets(exercise.sets, FIRST_TIME_ASSIST, exercise.repLow);
+
+      return {
+        exerciseId: exercise.id,
+        hasHistory: false,
+        instruction: `${formatLoad(FIRST_TIME_ASSIST, "assist")} × ${formatReps(sets)}`,
+        loadType: exercise.loadType,
+        progressionEvent: null,
+        rule: "first-time",
         sets
       };
     }
@@ -245,11 +262,13 @@ function deriveHoldTarget(
   previousLog: ExerciseLog
 ): ProgressionTarget {
   const previousSeconds = previousLog.sets.map((set) => set.seconds ?? 0);
+  // Min, not max: the level every set held. Max would jump the target past the
+  // +5s/session cadence whenever sets are uneven (e.g. 22/18/15 → target 22).
   const currentTarget = Math.min(
     30,
     Math.max(
       exercise.repLow,
-      previousSeconds.length > 0 ? Math.max(...previousSeconds) : exercise.repLow
+      previousSeconds.length > 0 ? Math.min(...previousSeconds) : exercise.repLow
     )
   );
   const allLoggedSetsReachedTarget =
@@ -424,5 +443,6 @@ function qualifiesForPullupStage(
     return sets.every((set) => set.reps >= 5);
   }
 
-  return sets.every((set) => set.weight === 2 && set.reps >= 5);
+  // ≤ 2, not === 2: less assist than purple is strictly harder, so it still graduates.
+  return sets.every((set) => set.weight <= 2 && set.reps >= 5);
 }

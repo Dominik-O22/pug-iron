@@ -284,6 +284,41 @@ describe("deriveProgressionTarget", () => {
     });
   });
 
+  it("keys the hold target off the weakest set so uneven sets keep the +5s cadence", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 22 },
+        { weight: 0, reps: 0, seconds: 18 },
+        { weight: 0, reps: 0, seconds: 15 }
+      ]
+    });
+
+    expect(target).toMatchObject({
+      instruction: "add hold time: 20s/20s/20s",
+      rule: "add-hold-time",
+      sets: [
+        { weight: 0, reps: 0, seconds: 20 },
+        { weight: 0, reps: 0, seconds: 20 },
+        { weight: 0, reps: 0, seconds: 20 }
+      ]
+    });
+  });
+
+  it("holds at the floor when a set stays below the starting hold time", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 12 },
+        { weight: 0, reps: 0, seconds: 9 },
+        { weight: 0, reps: 0, seconds: 8 }
+      ]
+    });
+
+    expect(target.rule).toBe("hold-load");
+    expect(target.sets.every((set) => set.seconds === 10)).toBe(true);
+  });
+
   it("caps hold targets at thirty seconds", () => {
     const target = deriveProgressionTarget(holdExercise, {
       exerciseId: "dead-hang",
@@ -300,6 +335,22 @@ describe("deriveProgressionTarget", () => {
       { weight: 0, reps: 0, seconds: 30 },
       { weight: 0, reps: 0, seconds: 30 }
     ]);
+  });
+
+  it("seeds a first-time assist exercise at the purple band", () => {
+    expect(deriveProgressionTarget(assistExercise, null)).toEqual({
+      exerciseId: "pullup",
+      hasHistory: false,
+      instruction: "assist 2 × 5/5/5",
+      loadType: "assist",
+      progressionEvent: null,
+      rule: "first-time",
+      sets: [
+        { weight: 2, reps: 5 },
+        { weight: 2, reps: 5 },
+        { weight: 2, reps: 5 }
+      ]
+    });
   });
 
   it("shows a plain rep target for a bodyweight exercise with no history", () => {
@@ -475,6 +526,18 @@ describe("pull-up ladder progression", () => {
           [2, 5],
           [2, 5],
           [2, 5]
+        ])
+      ])
+    ).toEqual({ stage: "complete", progressionEvent: "ladder-complete" });
+  });
+
+  it("completes the ladder from a stronger band than purple", () => {
+    expect(
+      advancePullupStage("pullup", ladderExercises, [
+        log("pullup", [
+          [1, 5],
+          [1, 6],
+          [0, 5]
         ])
       ])
     ).toEqual({ stage: "complete", progressionEvent: "ladder-complete" });

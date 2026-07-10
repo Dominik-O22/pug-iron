@@ -427,7 +427,7 @@ function WorkoutSessionDetail({
 
       <Panel eyebrow="workout detail">
         <Text className="font-barlow-bold text-[32px] uppercase leading-[36px] text-text">
-          Workout {session.workout}
+          {session.workout === "P" ? "Pull-up ladder" : `Workout ${session.workout}`}
         </Text>
         <DateLine className="mt-2" parts={parts} />
         <View className="mt-5 gap-3">
@@ -611,7 +611,7 @@ function SessionEditor({
       <BackButton onPress={onCancel} />
       <Panel eyebrow="edit workout">
         <Text className="font-barlow-bold text-[32px] uppercase leading-[36px] text-text">
-          Workout {session.workout}
+          {session.workout === "P" ? "Pull-up ladder" : `Workout ${session.workout}`}
         </Text>
         <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
           Adjust the saved sets. XP stays as earned.

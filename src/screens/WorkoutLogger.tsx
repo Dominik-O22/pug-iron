@@ -365,7 +365,10 @@ export function WorkoutLoggerModal({
                     }
                   />
 
+                  {/* key remounts the inputs when the active set changes, so a still-running
+                      hold timer can't commit the previous set's elapsed time into the new one */}
                   <ActiveSetInputs
+                    key={`${exerciseIndex}:${activeSetIndex}`}
                     exercise={activeDraft.exercise}
                     onChange={updateActiveSet}
                     set={activeSet}
