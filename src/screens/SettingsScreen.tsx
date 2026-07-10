@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -16,6 +16,7 @@ import {
   type PugIronDb
 } from "../db";
 import { formatWeight, labelTracking, localDateString } from "../lib/format";
+import { hasNotificationPermission, requestNotificationPermission } from "../lib/notifications";
 import { tokens } from "../lib/tokens";
 import {
   deserializeBackup,
@@ -23,6 +24,7 @@ import {
   type BackupCounts,
   type BackupPayload
 } from "../logic/backup";
+import type { ReminderSettings } from "../logic/reminders";
 import type { ExerciseDef, WorkoutSession } from "../types";
 
 type BusyAction = "export" | "import" | "exercises" | "wipe";
@@ -36,11 +38,15 @@ type ImportPreview = {
 export function SettingsScreen({
   db,
   exercises,
-  onDataChanged
+  onDataChanged,
+  onUpdateReminderSettings,
+  reminderSettings
 }: {
   db: PugIronDb;
   exercises: ExerciseDef[];
   onDataChanged: () => Promise<void>;
+  onUpdateReminderSettings: (settings: ReminderSettings) => Promise<void>;
+  reminderSettings: ReminderSettings;
 }) {
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [draftExercises, setDraftExercises] = useState(() => normalizeExerciseOrders(exercises));
@@ -349,6 +355,12 @@ export function SettingsScreen({
         />
       </Panel>
 
+      <ReminderPanel
+        onInfo={info}
+        onUpdate={onUpdateReminderSettings}
+        settings={reminderSettings}
+      />
+
       <Panel eyebrow="danger zone">
         <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Wipe data</Text>
         <ActionButton
@@ -363,6 +375,172 @@ export function SettingsScreen({
       </ScrollView>
       {dialog}
     </>
+  );
+}
+
+const WEEKDAY_CHIPS: { day: number; label: string }[] = [
+  { day: 1, label: "MON" },
+  { day: 2, label: "TUE" },
+  { day: 3, label: "WED" },
+  { day: 4, label: "THU" },
+  { day: 5, label: "FRI" },
+  { day: 6, label: "SAT" },
+  { day: 7, label: "SUN" }
+];
+
+function ReminderPanel({
+  onInfo,
+  onUpdate,
+  settings
+}: {
+  onInfo: (eyebrow: string, title: string, body: string) => void;
+  onUpdate: (settings: ReminderSettings) => Promise<void>;
+  settings: ReminderSettings;
+}) {
+  const [permissionOk, setPermissionOk] = useState(true);
+
+  useEffect(() => {
+    if (!settings.enabled) {
+      return;
+    }
+
+    void hasNotificationPermission().then(setPermissionOk);
+
+    // Also re-check on foreground: the user may have flipped the permission in
+    // Android settings and come straight back to this panel.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void hasNotificationPermission().then(setPermissionOk);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [settings.enabled]);
+
+  async function toggleEnabled() {
+    if (settings.enabled) {
+      await onUpdate({ ...settings, enabled: false });
+      return;
+    }
+
+    const granted = await requestNotificationPermission();
+
+    if (!granted) {
+      onInfo(
+        "reminder",
+        "Reminders need notification permission.",
+        "Allow notifications for Pug Iron in Android settings, then try again."
+      );
+      return;
+    }
+
+    await onUpdate({ ...settings, enabled: true });
+  }
+
+  function toggleWeekday(day: number) {
+    const weekdays = settings.weekdays.includes(day)
+      ? settings.weekdays.filter((value) => value !== day)
+      : [...settings.weekdays, day].sort((first, second) => first - second);
+
+    void onUpdate({ ...settings, weekdays });
+  }
+
+  return (
+    <Panel eyebrow="reminder">
+      <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Reminder</Text>
+
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityState={{ checked: settings.enabled }}
+        className="mt-5 min-h-[56px] flex-row items-center justify-between rounded-lg border border-line bg-panel-2 px-4"
+        onPress={() => void toggleEnabled()}
+      >
+        <Text className="font-barlow-semibold text-[18px] leading-[22px] text-text">
+          Session reminder
+        </Text>
+        <Text
+          className={`font-mono-medium text-[13px] uppercase ${
+            settings.enabled ? "text-mint" : "text-text-dim"
+          }`}
+          style={labelTracking}
+        >
+          {settings.enabled ? "on" : "off"}
+        </Text>
+      </Pressable>
+
+      {settings.enabled ? (
+        <View className="mt-5 gap-4">
+          {permissionOk ? null : (
+            <Text className="font-barlow text-[14px] leading-[18px] text-text-dim">
+              Notifications are off in Android settings, so nothing will show up.
+            </Text>
+          )}
+          <Stepper
+            formatValue={(value) => String(value).padStart(2, "0")}
+            label="Hour"
+            min={0}
+            onChange={(hour) =>
+              void onUpdate({ ...settings, hour: Math.min(23, Math.round(hour)) })
+            }
+            step={1}
+            value={settings.hour}
+          />
+          <Stepper
+            formatValue={(value) => String(value).padStart(2, "0")}
+            label="Minute"
+            min={0}
+            onChange={(minute) =>
+              void onUpdate({ ...settings, minute: Math.min(55, Math.round(minute)) })
+            }
+            step={5}
+            value={settings.minute}
+          />
+
+          <View>
+            <Text
+              className="mb-2 font-mono-medium text-[11px] uppercase text-text-dim"
+              style={labelTracking}
+            >
+              days
+            </Text>
+            <View className="flex-row gap-1">
+              {WEEKDAY_CHIPS.map(({ day, label }) => {
+                const selected = settings.weekdays.includes(day);
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    className={`min-h-[56px] flex-1 items-center justify-center rounded-lg ${
+                      selected ? "bg-mint" : "border border-line bg-bg"
+                    }`}
+                    key={day}
+                    onPress={() => toggleWeekday(day)}
+                  >
+                    <Text
+                      className={`font-mono-medium text-[11px] uppercase ${
+                        selected ? "text-bg" : "text-text-dim"
+                      }`}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {settings.weekdays.length === 0 ? (
+              <Text className="mt-2 font-barlow text-[14px] leading-[18px] text-text-dim">
+                No days picked, so nothing is scheduled.
+              </Text>
+            ) : null}
+          </View>
+
+          <Text className="font-barlow text-[14px] leading-[18px] text-text-dim">
+            One cue on chosen days. Ignoring it costs nothing.
+          </Text>
+        </View>
+      ) : null}
+    </Panel>
   );
 }
 

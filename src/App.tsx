@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -14,6 +14,7 @@ import {
   getLatestExerciseLogs,
   getLifetimeTotals,
   getPullupStage,
+  getReminderSettings,
   getTodayWorkoutSessions,
   getWeightSettings,
   getXpTotal,
@@ -25,6 +26,7 @@ import {
   listWeighIns,
   listWorkoutSessions,
   openPugIronDb,
+  setReminderSettings,
   updateWorkoutSessionKeepingXp,
   type PugIronDb
 } from "./db";
@@ -34,8 +36,11 @@ import { ProgressScreen } from "./screens/ProgressScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
+import { syncReminders } from "./lib/notifications";
 import type { PullupStage } from "./logic/progression";
-import { workoutExercisesForStage } from "./logic/pullup";
+import { isPrePullupStage, workoutExercisesForStage } from "./logic/pullup";
+import type { ReminderSettings } from "./logic/reminders";
+import { nextWorkout } from "./logic/workouts";
 import { highestRankGainedBetween, type Rank } from "./logic/xp";
 import type {
   ExerciseDef,
@@ -52,6 +57,7 @@ type AppData = {
   lifetimeTotals: LifetimeTotals;
   latestLogs: Record<string, ExerciseLog>;
   pullupStage: PullupStage;
+  reminderSettings: ReminderSettings;
   rowSessions: RowSession[];
   sessions: WorkoutSession[];
   todaySessions: WorkoutSession[];
@@ -85,7 +91,8 @@ function PugIronApp() {
       weighIns,
       weightSettings,
       lifetimeTotals,
-      pullupStage
+      pullupStage,
+      reminderSettings
     ] = await Promise.all([
       listExerciseDefs(database),
       listWorkoutSessions(database),
@@ -95,7 +102,8 @@ function PugIronApp() {
       listWeighIns(database),
       getWeightSettings(database),
       getLifetimeTotals(database),
-      getPullupStage(database)
+      getPullupStage(database),
+      getReminderSettings(database)
     ]);
     const latestLogs = await getLatestExerciseLogs(
       database,
@@ -107,6 +115,7 @@ function PugIronApp() {
       lifetimeTotals,
       latestLogs,
       pullupStage,
+      reminderSettings,
       rowSessions,
       sessions,
       todaySessions,
@@ -115,6 +124,32 @@ function PugIronApp() {
       xpTotal
     });
   }, []);
+
+  // Re-synced on foreground too: permission may have been granted or revoked in
+  // Android settings while backgrounded, and syncReminders is the only place the
+  // scheduled state gets reconciled with it.
+  useEffect(() => {
+    if (!appData) {
+      return;
+    }
+
+    const sync = () =>
+      void syncReminders({
+        settings: appData.reminderSettings,
+        next: isPrePullupStage(appData.pullupStage) ? "P" : nextWorkout(appData.sessions),
+        trainedToday: appData.todaySessions.length > 0
+      });
+
+    sync();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        sync();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [appData]);
 
   useEffect(() => {
     if (!fontsLoaded) {
@@ -235,6 +270,18 @@ function PugIronApp() {
     [db, loadAppData]
   );
 
+  const handleUpdateReminderSettings = useCallback(
+    async (next: ReminderSettings) => {
+      if (!db) {
+        return;
+      }
+
+      await setReminderSettings(db, next);
+      await loadAppData(db);
+    },
+    [db, loadAppData]
+  );
+
   if (!fontsLoaded || !appData || !db) {
     return (
       <View className="flex-1 bg-bg">
@@ -267,6 +314,7 @@ function PugIronApp() {
             onLogRowSession: handleLogRowSession,
             onLogWeighIn: handleLogWeighIn,
             onStartWorkout: (workout) => setLoggerState({ workout, startedAt: Date.now() }),
+            onUpdateReminderSettings: handleUpdateReminderSettings,
             onUpdateSession: handleUpdateSession,
             screen
           })}
@@ -311,6 +359,7 @@ function renderScreen({
   onLogRowSession,
   onLogWeighIn,
   onStartWorkout,
+  onUpdateReminderSettings,
   onUpdateSession,
   screen
 }: {
@@ -323,6 +372,7 @@ function renderScreen({
   onLogRowSession: (rowSession: Omit<RowSession, "id" | "xp">) => Promise<void>;
   onLogWeighIn: (weighIn: Omit<WeighIn, "id" | "xp">) => Promise<void>;
   onStartWorkout: (workout: WorkoutSession["workout"]) => void;
+  onUpdateReminderSettings: (settings: ReminderSettings) => Promise<void>;
   onUpdateSession: (session: WorkoutSession & { id: number }) => Promise<void>;
   screen: Screen;
 }) {
@@ -357,5 +407,13 @@ function renderScreen({
     return <ProgressScreen appData={appData} />;
   }
 
-  return <SettingsScreen db={db} exercises={appData.exercises} onDataChanged={onDataChanged} />;
+  return (
+    <SettingsScreen
+      db={db}
+      exercises={appData.exercises}
+      onDataChanged={onDataChanged}
+      onUpdateReminderSettings={onUpdateReminderSettings}
+      reminderSettings={appData.reminderSettings}
+    />
+  );
 }
