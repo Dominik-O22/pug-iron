@@ -47,7 +47,8 @@ export function buildLoggedEntries(draftExercises: DraftExercise[]): ExerciseLog
         .filter((set) => set.logged)
         .map((set) => ({
           weight: set.weight,
-          reps: set.reps
+          reps: set.reps,
+          ...(typeof set.seconds === "number" ? { seconds: set.seconds } : {})
         }))
     }))
     .filter((entry) => entry.sets.length > 0);
@@ -70,12 +71,20 @@ export function buildSetProgressSegments(
 ): SetProgressSegment[] {
   return sets.map((set, index) => ({
     label: set.logged
-      ? `S${index + 1} ${formatWeight(set.weight)}×${set.reps} ✓`
+      ? `S${index + 1} ${formatLoggedSet(set)} ✓`
       : index === activeSetIndex
         ? `S${index + 1} ▸`
         : `S${index + 1} —`,
     state: index === activeSetIndex ? "active" : set.logged ? "logged" : "pending"
   }));
+}
+
+function formatLoggedSet(set: DraftSet): string {
+  if (typeof set.seconds === "number") {
+    return `${set.seconds}s`;
+  }
+
+  return `${formatWeight(set.weight)}×${set.reps}`;
 }
 
 export function groupSessionsByWeek(sessions: WorkoutSession[]) {

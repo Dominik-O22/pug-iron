@@ -1,4 +1,4 @@
-import { SEED_CUES_BY_ID } from "../plan";
+import { LADDER_EXERCISE_DEFS, SEED_CUES_BY_ID } from "../plan";
 import type {
   ExerciseDef,
   ExerciseLog,
@@ -10,8 +10,9 @@ import type {
 } from "../types";
 
 export const BACKUP_APP = "pug-iron";
-export const BACKUP_SCHEMA_VERSION = 2;
-const SUPPORTED_IMPORT_VERSIONS = [1, 2];
+export const BACKUP_SCHEMA_VERSION = 3;
+const SUPPORTED_IMPORT_VERSIONS = [1, 2, 3];
+const PULLUP_STAGE_VALUES = ["dead-hang", "scap-pull", "pullup-negative", "pullup", "complete"];
 
 export type BackupPayload = {
   app: typeof BACKUP_APP;
@@ -107,10 +108,16 @@ export function validateBackupPayload(value: unknown): BackupParseResult {
     return arrays;
   }
 
-  // A v1 backup predates form cues; bring it to the current shape before validating.
+  // Older backups predate later columns; bring each up to the current shape before
+  // validating. A v1 backup lacks form cues; anything below v3 lacks the pull-up
+  // ladder defs and the pullupStage setting.
   if (incomingVersion === 1) {
     arrays.exercises = arrays.exercises.map(shimV1Exercise);
-    arrays.settings = arrays.settings.map(shimV1Setting);
+  }
+
+  if (incomingVersion <= 2) {
+    arrays.exercises = appendLadderDefs(arrays.exercises);
+    arrays.settings = shimSettingsToV3(arrays.settings, arrays.sessions);
   }
 
   const validators: Array<[unknown[], (item: unknown, index: number) => string | null]> = [
@@ -167,14 +174,50 @@ function shimV1Exercise(value: unknown): unknown {
   return { ...record, cues: SEED_CUES_BY_ID[id] ?? [] };
 }
 
-function shimV1Setting(value: unknown): unknown {
-  const record = asRecord(value);
+function appendLadderDefs(exercises: unknown[]): unknown[] {
+  const existingIds = new Set(
+    exercises
+      .map((exercise) => asRecord(exercise)?.id)
+      .filter((id): id is string => typeof id === "string")
+  );
+  const missing = LADDER_EXERCISE_DEFS.filter((def) => !existingIds.has(def.id)).map((def) => ({
+    ...def,
+    cues: [...def.cues]
+  }));
 
-  if (!record || record.key !== "schemaVersion") {
-    return value;
+  return [...exercises, ...missing];
+}
+
+function shimSettingsToV3(settings: unknown[], sessions: unknown[]): unknown[] {
+  const hasStage = settings.some((setting) => asRecord(setting)?.key === "pullupStage");
+  const bumped = settings.map((setting) => {
+    const record = asRecord(setting);
+
+    if (!record || record.key !== "schemaVersion") {
+      return setting;
+    }
+
+    return { ...record, value: BACKUP_SCHEMA_VERSION };
+  });
+
+  if (hasStage) {
+    return bumped;
   }
 
-  return { ...record, value: BACKUP_SCHEMA_VERSION };
+  return [
+    ...bumped,
+    { key: "pullupStage", value: backupHasPullupLogs(sessions) ? "pullup" : "dead-hang" }
+  ];
+}
+
+function backupHasPullupLogs(sessions: unknown[]): boolean {
+  return sessions.some((session) => {
+    const entries = asRecord(session)?.entries;
+
+    return (
+      Array.isArray(entries) && entries.some((entry) => asRecord(entry)?.exerciseId === "pullup")
+    );
+  });
 }
 
 function cloneWorkoutSession(session: WorkoutSession): WorkoutSession {
@@ -268,7 +311,7 @@ function validateWorkoutSession(value: unknown, index: number): string | null {
     return `${label} has an invalid date. Dates must use YYYY-MM-DD.`;
   }
 
-  if (record.workout !== "A" && record.workout !== "B") {
+  if (record.workout !== "A" && record.workout !== "B" && record.workout !== "P") {
     return `${label} has an unknown workout code.`;
   }
 
@@ -346,6 +389,10 @@ function validateSetEntry(value: unknown, label: string): string | null {
 
   if (!isNonNegativeInteger(record.reps)) {
     return `${label} has an invalid rep count.`;
+  }
+
+  if (record.seconds !== undefined && !isNonNegativeFiniteNumber(record.seconds)) {
+    return `${label} has an invalid hold time.`;
   }
 
   return null;
@@ -427,7 +474,7 @@ function validateExerciseDef(value: unknown, index: number): string | null {
     return `${label} is missing a name.`;
   }
 
-  if (record.workout !== "A" && record.workout !== "B") {
+  if (record.workout !== "A" && record.workout !== "B" && record.workout !== "P") {
     return `${label} has an unknown workout code.`;
   }
 
@@ -447,8 +494,12 @@ function validateExerciseDef(value: unknown, index: number): string | null {
     return `${label} has an invalid high rep target.`;
   }
 
-  if (record.loadType !== "weight" && record.loadType !== "assist") {
+  if (record.loadType !== "weight" && record.loadType !== "assist" && record.loadType !== "body") {
     return `${label} has an unknown load type.`;
+  }
+
+  if (record.measure !== undefined && record.measure !== "reps" && record.measure !== "seconds") {
+    return `${label} has an unknown measure.`;
   }
 
   if (!isNonNegativeFiniteNumber(record.incrementKg)) {
@@ -488,6 +539,13 @@ function validateSetting(value: unknown, index: number): string | null {
 
   if (record.key === "schemaVersion" && record.value !== BACKUP_SCHEMA_VERSION) {
     return `${label} has an unsupported schema version.`;
+  }
+
+  if (
+    record.key === "pullupStage" &&
+    (typeof record.value !== "string" || !PULLUP_STAGE_VALUES.includes(record.value))
+  ) {
+    return `${label} has an unknown pull-up stage.`;
   }
 
   if (

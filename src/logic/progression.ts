@@ -1,4 +1,5 @@
-import type { ExerciseDef, ExerciseLog } from "../types";
+import { XP_EVENTS } from "./xp";
+import type { ExerciseDef, ExerciseLog, WorkoutSession } from "../types";
 
 export type ProgressionRule =
   | "first-time"
@@ -6,11 +7,13 @@ export type ProgressionRule =
   | "reduce-assist"
   | "add-unassisted-rep"
   | "add-rep"
-  | "hold-load";
+  | "hold-load"
+  | "add-hold-time";
 
 export type ProgressionTargetSet = {
   weight: number | null;
   reps: number;
+  seconds?: number;
 };
 
 export type ProgressionEventTarget = {
@@ -31,7 +34,7 @@ export type ProgressionTarget = {
 
 type ProgressionExercise = Pick<
   ExerciseDef,
-  "id" | "sets" | "repLow" | "repHigh" | "loadType" | "incrementKg"
+  "id" | "sets" | "repLow" | "repHigh" | "loadType" | "incrementKg" | "measure"
 >;
 
 const FIRST_TIME_HINT =
@@ -42,6 +45,34 @@ export function deriveProgressionTarget(
   previousLog?: ExerciseLog | null
 ): ProgressionTarget {
   if (!previousLog || previousLog.sets.length === 0) {
+    if (exercise.measure === "seconds") {
+      const sets = buildHoldSets(exercise.sets, null, exercise.repLow);
+
+      return {
+        exerciseId: exercise.id,
+        hasHistory: false,
+        instruction: formatHold(sets),
+        loadType: exercise.loadType,
+        progressionEvent: null,
+        rule: "hold-load",
+        sets
+      };
+    }
+
+    if (exercise.loadType === "body") {
+      const sets = buildSets(exercise.sets, null, exercise.repLow);
+
+      return {
+        exerciseId: exercise.id,
+        hasHistory: false,
+        instruction: formatReps(sets),
+        loadType: exercise.loadType,
+        progressionEvent: null,
+        rule: "hold-load",
+        sets
+      };
+    }
+
     const sets = buildSets(exercise.sets, null, exercise.repLow);
 
     return {
@@ -53,6 +84,10 @@ export function deriveProgressionTarget(
       rule: "first-time",
       sets
     };
+  }
+
+  if (exercise.measure === "seconds") {
+    return deriveHoldTarget(exercise, previousLog);
   }
 
   const baseLoad = previousLog.sets[0].weight;
@@ -73,6 +108,24 @@ export function deriveProgressionTarget(
           targetLoad
         },
         rule: "add-load",
+        sets
+      };
+    }
+
+    if (exercise.loadType === "body") {
+      const repsTarget = buildRepTarget(exercise, previousLog);
+      const sets = repsTarget.reps.map((reps, index) => ({
+        weight: previousLog.sets[index]?.weight ?? baseLoad,
+        reps
+      }));
+
+      return {
+        exerciseId: exercise.id,
+        hasHistory: true,
+        instruction: `${formatLoad(baseLoad, exercise.loadType)} × ${formatReps(sets)}`,
+        loadType: exercise.loadType,
+        progressionEvent: null,
+        rule: "hold-load",
         sets
       };
     }
@@ -187,6 +240,52 @@ function buildSets(setCount: number, weight: number | null, reps: number): Progr
   return Array.from({ length: setCount }, () => ({ weight, reps }));
 }
 
+function deriveHoldTarget(
+  exercise: ProgressionExercise,
+  previousLog: ExerciseLog
+): ProgressionTarget {
+  const previousSeconds = previousLog.sets.map((set) => set.seconds ?? 0);
+  const currentTarget = Math.min(
+    30,
+    Math.max(
+      exercise.repLow,
+      previousSeconds.length > 0 ? Math.max(...previousSeconds) : exercise.repLow
+    )
+  );
+  const allLoggedSetsReachedTarget =
+    previousLog.sets.length >= 2 &&
+    previousLog.sets.every((set) => (set.seconds ?? 0) >= currentTarget);
+  const targetSeconds = allLoggedSetsReachedTarget
+    ? Math.min(30, currentTarget + 5)
+    : currentTarget;
+  const sets = buildHoldSets(exercise.sets, previousLog, targetSeconds);
+  const progressed = allLoggedSetsReachedTarget && targetSeconds > currentTarget;
+
+  return {
+    exerciseId: exercise.id,
+    hasHistory: true,
+    instruction: progressed ? `add hold time: ${formatHold(sets)}` : formatHold(sets),
+    loadType: exercise.loadType,
+    progressionEvent: null,
+    rule: progressed ? "add-hold-time" : "hold-load",
+    sets
+  };
+}
+
+function buildHoldSets(
+  setCount: number,
+  previousLog: ExerciseLog | null,
+  seconds: number
+): ProgressionTargetSet[] {
+  const baseWeight = previousLog?.sets[0]?.weight ?? null;
+
+  return Array.from({ length: setCount }, (_, index) => ({
+    weight: previousLog?.sets[index]?.weight ?? baseWeight,
+    reps: 0,
+    seconds
+  }));
+}
+
 function buildRepTarget(
   exercise: ProgressionExercise,
   previousLog: ExerciseLog
@@ -227,9 +326,17 @@ function formatReps(sets: ProgressionTargetSet[]): string {
   return sets.map((set) => String(set.reps)).join("/");
 }
 
+function formatHold(sets: ProgressionTargetSet[]): string {
+  return sets.map((set) => `${set.seconds ?? 0}s`).join("/");
+}
+
 function formatLoad(load: number, loadType: ExerciseDef["loadType"]): string {
   if (loadType === "assist") {
     return `assist ${formatNumber(load)}`;
+  }
+
+  if (loadType === "body") {
+    return "bodyweight";
   }
 
   return `${formatNumber(load)} kg`;
@@ -241,4 +348,81 @@ function formatNumber(value: number): string {
 
 function normalizeLoad(value: number): number {
   return Number(value.toFixed(1));
+}
+
+export type PullupStage =
+  | "dead-hang"
+  | "scap-pull"
+  | "pullup-negative"
+  | "pullup"
+  | "complete";
+
+export type PullupStageProgression = {
+  stage: PullupStage;
+  progressionEvent: string | null;
+};
+
+export function advancePullupStage(
+  activeStage: PullupStage,
+  exerciseDefs: ExerciseDef[],
+  entries: ExerciseLog[]
+): PullupStageProgression {
+  if (activeStage === "complete") {
+    return { stage: activeStage, progressionEvent: null };
+  }
+
+  const exercise = exerciseDefs.find((candidate) => candidate.id === activeStage);
+  const entry = entries.find((candidate) => candidate.exerciseId === activeStage);
+
+  if (!exercise || !entry || !qualifiesForPullupStage(activeStage, entry)) {
+    return { stage: activeStage, progressionEvent: null };
+  }
+
+  if (activeStage === "dead-hang") {
+    return { stage: "scap-pull", progressionEvent: "dead-hang" };
+  }
+
+  if (activeStage === "scap-pull") {
+    return { stage: "pullup-negative", progressionEvent: "scap-pull" };
+  }
+
+  if (activeStage === "pullup-negative") {
+    return { stage: "pullup", progressionEvent: "pullup-negative" };
+  }
+
+  return { stage: "complete", progressionEvent: "ladder-complete" };
+}
+
+export function calculateWorkoutXp(
+  workout: WorkoutSession["workout"],
+  progressionEventCount = 0
+): number {
+  const baseXp = workout === "P" ? XP_EVENTS.rowerSession : XP_EVENTS.workoutSessionSaved;
+
+  return baseXp + Math.max(0, progressionEventCount) * XP_EVENTS.progressionEvent;
+}
+
+function qualifiesForPullupStage(
+  stage: Exclude<PullupStage, "complete">,
+  entry: ExerciseLog
+): boolean {
+  if (entry.sets.length < 3) {
+    return false;
+  }
+
+  const sets = entry.sets.slice(0, 3);
+
+  if (stage === "dead-hang") {
+    return sets.every((set) => (set.seconds ?? 0) >= 30);
+  }
+
+  if (stage === "scap-pull") {
+    return sets.every((set) => set.reps >= 8);
+  }
+
+  if (stage === "pullup-negative") {
+    return sets.every((set) => set.reps >= 5);
+  }
+
+  return sets.every((set) => set.weight === 2 && set.reps >= 5);
 }

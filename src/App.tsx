@@ -14,6 +14,7 @@ import {
   getLastWorkoutSession,
   getLatestExerciseLogs,
   getLifetimeTotals,
+  getPullupStage,
   getTodayWorkoutSessions,
   getWeightSettings,
   getXpTotal,
@@ -34,6 +35,8 @@ import { ProgressScreen } from "./screens/ProgressScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { TodayScreen } from "./screens/TodayScreen";
 import { WorkoutLoggerModal, type LoggerState } from "./screens/WorkoutLogger";
+import type { PullupStage } from "./logic/progression";
+import { workoutExercisesForStage } from "./logic/pullup";
 import { highestRankGainedBetween, type Rank } from "./logic/xp";
 import type {
   ExerciseDef,
@@ -50,6 +53,7 @@ type AppData = {
   lifetimeTotals: LifetimeTotals;
   latestLogs: Record<string, ExerciseLog>;
   lastSession: WorkoutSession | null;
+  pullupStage: PullupStage;
   rowSessions: RowSession[];
   sessions: WorkoutSession[];
   todaySessions: WorkoutSession[];
@@ -83,7 +87,8 @@ function PugIronApp() {
       rowSessions,
       weighIns,
       weightSettings,
-      lifetimeTotals
+      lifetimeTotals,
+      pullupStage
     ] = await Promise.all([
       listExerciseDefs(database),
       listWorkoutSessions(database),
@@ -93,7 +98,8 @@ function PugIronApp() {
       listRowSessions(database),
       listWeighIns(database),
       getWeightSettings(database),
-      getLifetimeTotals(database)
+      getLifetimeTotals(database),
+      getPullupStage(database)
     ]);
     const latestLogs = await getLatestExerciseLogs(
       database,
@@ -105,6 +111,7 @@ function PugIronApp() {
       lifetimeTotals,
       latestLogs,
       lastSession,
+      pullupStage,
       rowSessions,
       sessions,
       todaySessions,
@@ -274,9 +281,14 @@ function PugIronApp() {
 
       {loggerState ? (
         <WorkoutLoggerModal
-          exercises={appData.exercises.filter((exercise) => exercise.workout === loggerState.workout)}
+          exercises={workoutExercisesForStage(
+            appData.exercises,
+            loggerState.workout,
+            appData.pullupStage
+          )}
           latestLogs={appData.latestLogs}
           loggerState={loggerState}
+          pullupStage={appData.pullupStage}
           onClose={() => setLoggerState(null)}
           onSave={handleSaveSession}
         />
@@ -326,6 +338,7 @@ function renderScreen({
         onLogRowSession={onLogRowSession}
         onLogWeighIn={onLogWeighIn}
         onStartWorkout={onStartWorkout}
+        pullupStage={appData.pullupStage}
       />
     );
   }

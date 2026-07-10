@@ -7,7 +7,18 @@ import { Num } from "../components/Num";
 import { Panel } from "../components/Panel";
 import { Stepper } from "../components/Stepper";
 import { formatVolume, formatWeight, labelTracking, localDateString } from "../lib/format";
-import { deriveProgressionTarget, type ProgressionTarget } from "../logic/progression";
+import {
+  deriveProgressionTarget,
+  type ProgressionTarget,
+  type PullupStage
+} from "../logic/progression";
+import {
+  PULLUP_LADDER_RUNGS,
+  isLadderComplete,
+  ladderExerciseForStage,
+  ladderRungNumber,
+  workoutExercisesForStage
+} from "../logic/pullup";
 import { nextWorkout } from "../logic/workouts";
 import type { ExerciseDef, ExerciseLog, RowSession, WeighIn, WorkoutSession } from "../types";
 
@@ -23,17 +34,21 @@ type QuickAction = "rower" | "weigh-in" | null;
 
 export function TodayScreen({
   appData,
+  pullupStage,
   onLogRowSession,
   onLogWeighIn,
   onStartWorkout
 }: {
   appData: TodayData;
+  pullupStage: PullupStage;
   onLogRowSession: (rowSession: Omit<RowSession, "id" | "xp">) => Promise<void>;
   onLogWeighIn: (weighIn: Omit<WeighIn, "id" | "xp">) => Promise<void>;
   onStartWorkout: (workout: WorkoutSession["workout"]) => void;
 }) {
   const workout = nextWorkout(appData.lastSession);
-  const exercises = appData.exercises.filter((exercise) => exercise.workout === workout);
+  const exercises = workoutExercisesForStage(appData.exercises, workout, pullupStage);
+  const ladderExercise = ladderExerciseForStage(appData.exercises, pullupStage);
+  const ladderLog = ladderExercise ? appData.latestLogs[ladderExercise.id] : undefined;
   const hasLoggedToday = appData.todaySessions.length > 0;
   const latestWeighIn = appData.weighIns[appData.weighIns.length - 1];
   const [quickAction, setQuickAction] = useState<QuickAction>(null);
@@ -163,6 +178,13 @@ export function TodayScreen({
           </Text>
         </Pressable>
       </Panel>
+
+      <PullupLadderCard
+        exercise={ladderExercise}
+        latestLog={ladderLog}
+        onStart={() => onStartWorkout("P")}
+        stage={pullupStage}
+      />
 
       <Panel eyebrow="quick log">
         <View className="gap-3">
@@ -367,8 +389,88 @@ function ExerciseSchemeRow({
         </View>
         {exercise.loadType === "assist" ? (
           <Text className="font-barlow text-[13px] text-text-dim">assist</Text>
+        ) : exercise.measure === "seconds" ? (
+          <Text className="font-barlow text-[13px] text-text-dim">seconds</Text>
         ) : null}
       </View>
     </View>
+  );
+}
+
+function PullupLadderCard({
+  exercise,
+  latestLog,
+  onStart,
+  stage
+}: {
+  exercise?: ExerciseDef;
+  latestLog?: ExerciseLog;
+  onStart: () => void;
+  stage: PullupStage;
+}) {
+  // Once the ladder graduates, band pull-ups belong to Workout B and the standalone
+  // card has nothing left to start — the completion moment already showed in the
+  // logger summary and stays in History.
+  if (!exercise || isLadderComplete(stage)) {
+    return null;
+  }
+
+  const rung = ladderRungNumber(stage);
+  const target = deriveProgressionTarget(exercise, latestLog);
+  const isHold = exercise.measure === "seconds";
+  const holdTarget = target.sets[0]?.seconds ?? exercise.repLow;
+  const scheme = isHold
+    ? `${exercise.sets} × ${holdTarget}s`
+    : `${exercise.sets} × ${exercise.repLow}-${exercise.repHigh}`;
+
+  return (
+    <Panel eyebrow="pull-up ladder">
+      <View className="flex-row items-start justify-between gap-4">
+        <View className="flex-1">
+          <Text className="font-barlow-bold text-[28px] leading-[32px] text-text">
+            {exercise.name}
+          </Text>
+          <View className="mt-1 flex-row items-center">
+            <Text
+              className="font-mono-medium text-[11px] uppercase text-text-dim"
+              style={labelTracking}
+            >
+              stage{" "}
+            </Text>
+            <Num weight="medium" className="text-[11px] text-mint">
+              {rung}
+            </Num>
+            <Text
+              className="font-mono-medium text-[11px] uppercase text-text-dim"
+              style={labelTracking}
+            >
+              {" / "}
+            </Text>
+            <Num weight="medium" className="text-[11px] text-text-dim">
+              {PULLUP_LADDER_RUNGS}
+            </Num>
+          </View>
+        </View>
+        <View className="items-end">
+          <Num weight="medium" className="text-[24px] text-mint">
+            {scheme}
+          </Num>
+          <Text className="font-barlow text-[13px] text-text-dim">{isHold ? "hold" : "reps"}</Text>
+        </View>
+      </View>
+
+      {exercise.note ? (
+        <Text className="mt-3 font-barlow text-[15px] leading-[20px] text-text-dim">
+          {exercise.note}
+        </Text>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        className="mt-4 min-h-[56px] items-center justify-center rounded-lg bg-mint px-5"
+        onPress={onStart}
+      >
+        <Text className="font-barlow-bold text-[18px] uppercase text-bg">Start ladder set</Text>
+      </Pressable>
+    </Panel>
   );
 }

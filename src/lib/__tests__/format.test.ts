@@ -14,8 +14,11 @@ describe("abbreviateExerciseName", () => {
       "lateral-raise": "RAISE",
       "hammer-curl": "HAMMER",
       "db-rdl": "DEADLIFT",
+      "dead-hang": "DEAD",
       "seated-oh-press": "SHOULDER",
       pullup: "PULL-UP",
+      "pullup-negative": "NEGATIVE",
+      "scap-pull": "SCAPULAR",
       "incline-db-press": "PRESS",
       "oh-triceps-ext": "TRICEPS"
     });

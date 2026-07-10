@@ -1,7 +1,8 @@
 import * as SQLite from "expo-sqlite";
 
-import { EXERCISE_DEFS, SEED_CUES_BY_ID } from "./plan";
+import { EXERCISE_DEFS, LADDER_EXERCISE_DEFS, SEED_CUES_BY_ID } from "./plan";
 import type { BackupPayload, BackupSourceData } from "./logic/backup";
+import { advancePullupStage, type PullupStage } from "./logic/progression";
 import { XP_EVENTS } from "./logic/xp";
 import type {
   ExerciseDef,
@@ -15,7 +16,8 @@ import type {
 } from "./types";
 
 const DATABASE_NAME = "pug-iron.db";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+const DEFAULT_PULLUP_STAGE: PullupStage = "dead-hang";
 
 export type PugIronDb = SQLite.SQLiteDatabase;
 
@@ -41,6 +43,7 @@ type ExerciseRow = {
   increment_kg: number;
   note: string;
   cues: string;
+  measure: string;
 };
 
 type SessionRow = {
@@ -85,7 +88,7 @@ type CountRow = {
 const DEFAULT_SETTINGS: Setting[] = [
   { key: "xpTotal", value: 0 },
   { key: "targetWeightKg", value: 83 },
-  { key: "schemaVersion", value: 2 }
+  { key: "schemaVersion", value: 3 }
 ];
 
 const CREATE_SCHEMA_SQL = `
@@ -98,7 +101,7 @@ CREATE TABLE rows      (id INTEGER PRIMARY KEY, date TEXT NOT NULL, minutes REAL
 CREATE TABLE weighins  (id INTEGER PRIMARY KEY, date TEXT NOT NULL, kg REAL NOT NULL, xp INTEGER NOT NULL);
 CREATE TABLE exercises (id TEXT PRIMARY KEY, name TEXT, workout TEXT, ord INTEGER, sets INTEGER,
                         rep_low INTEGER, rep_high INTEGER, load_type TEXT, increment_kg REAL, note TEXT,
-                        cues TEXT NOT NULL DEFAULT '[]');
+                        cues TEXT NOT NULL DEFAULT '[]', measure TEXT NOT NULL DEFAULT 'reps');
 CREATE TABLE settings  (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX idx_sessions_date ON sessions(date);
 CREATE INDEX idx_rows_date     ON rows(date);
@@ -106,8 +109,8 @@ CREATE INDEX idx_weighins_date ON weighins(date);
 `;
 
 const INSERT_EXERCISE_SQL = `
-INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues, measure)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING;
 `;
 
@@ -147,6 +150,21 @@ const migrationSteps: MigrationStep[] = [
       await setSettingValue(db, "schemaVersion", 2);
       await db.execAsync("PRAGMA user_version = 2;");
     }
+  },
+  {
+    from: 2,
+    to: 3,
+    run: async (db) => {
+      // Existing v2 installs lack the column; fresh installs already have it from CREATE_SCHEMA_SQL.
+      if (!(await columnExists(db, "exercises", "measure"))) {
+        await db.execAsync("ALTER TABLE exercises ADD COLUMN measure TEXT NOT NULL DEFAULT 'reps';");
+      }
+
+      await seedExerciseDefs(db, LADDER_EXERCISE_DEFS);
+      await db.runAsync(INSERT_SETTING_SQL, ["pullupStage", JSON.stringify(DEFAULT_PULLUP_STAGE)]);
+      await setSettingValue(db, "schemaVersion", 3);
+      await db.execAsync("PRAGMA user_version = 3;");
+    }
   }
 ];
 
@@ -162,7 +180,7 @@ export async function openPugIronDb(): Promise<PugIronDb> {
 
 export async function listExerciseDefs(db: PugIronDb): Promise<ExerciseDef[]> {
   const rows = await db.getAllAsync<ExerciseRow>(
-    `SELECT id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues
+    `SELECT id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues, measure
      FROM exercises
      ORDER BY workout ASC, ord ASC;`
   );
@@ -172,6 +190,10 @@ export async function listExerciseDefs(db: PugIronDb): Promise<ExerciseDef[]> {
 
 export async function getXpTotal(db: PugIronDb): Promise<number> {
   return getSettingValue(db, "xpTotal", 0);
+}
+
+export async function getPullupStage(db: PugIronDb): Promise<PullupStage> {
+  return getSettingValue<PullupStage>(db, "pullupStage", DEFAULT_PULLUP_STAGE);
 }
 
 export async function getLastWorkoutSession(db: PugIronDb): Promise<WorkoutSession | null> {
@@ -376,6 +398,16 @@ export async function insertWorkoutSessionWithXp(
     previousXpTotal = await getSettingValue(db, "xpTotal", 0);
     nextXpTotal = previousXpTotal + session.xp;
     await setSettingValue(db, "xpTotal", nextXpTotal);
+
+    // Any session logging the active ladder exercise (the "P" mini-session or the
+    // stage-swapped workout B slot) can graduate the ladder; keep the stored stage
+    // in step with the entries that were just saved.
+    const currentStage = await getSettingValue<PullupStage>(db, "pullupStage", DEFAULT_PULLUP_STAGE);
+    const { stage } = advancePullupStage(currentStage, EXERCISE_DEFS, session.entries);
+
+    if (stage !== currentStage) {
+      await setSettingValue(db, "pullupStage", stage);
+    }
   });
 
   return {
@@ -605,7 +637,8 @@ async function seedExerciseDefs(db: PugIronDb, exerciseDefs: ExerciseDef[]): Pro
       exercise.loadType,
       exercise.incrementKg,
       exercise.note,
-      JSON.stringify(exercise.cues)
+      JSON.stringify(exercise.cues),
+      exercise.measure ?? "reps"
     ]);
   }
 }
@@ -719,8 +752,8 @@ async function insertExerciseDefFromBackup(
   exercise: ExerciseDef
 ): Promise<void> {
   await db.runAsync(
-    `INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO exercises (id, name, workout, ord, sets, rep_low, rep_high, load_type, increment_kg, note, cues, measure)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       exercise.id,
       exercise.name,
@@ -732,7 +765,8 @@ async function insertExerciseDefFromBackup(
       exercise.loadType,
       exercise.incrementKg,
       exercise.note,
-      JSON.stringify(exercise.cues)
+      JSON.stringify(exercise.cues),
+      exercise.measure ?? "reps"
     ]
   );
 }
@@ -778,11 +812,20 @@ function mapExerciseRow(row: ExerciseRow): ExerciseDef {
     sets: row.sets,
     repLow: row.rep_low,
     repHigh: row.rep_high,
-    loadType: row.load_type === "assist" ? "assist" : "weight",
+    loadType: parseLoadType(row.load_type),
+    measure: row.measure === "seconds" ? "seconds" : "reps",
     incrementKg: row.increment_kg,
     note: row.note,
     cues: parseCues(row.cues)
   };
+}
+
+function parseLoadType(value: string): ExerciseDef["loadType"] {
+  if (value === "assist" || value === "body") {
+    return value;
+  }
+
+  return "weight";
 }
 
 function parseCues(value: string | null): string[] {
@@ -832,7 +875,7 @@ function mapWeighInRow(row: WeighInRow): WeighIn {
 }
 
 function parseWorkout(value: string): WorkoutSession["workout"] {
-  if (value !== "A" && value !== "B") {
+  if (value !== "A" && value !== "B" && value !== "P") {
     throw new Error(`Unknown workout code: ${value}`);
   }
 
