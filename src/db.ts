@@ -3,6 +3,7 @@ import * as SQLite from "expo-sqlite";
 import { EXERCISE_DEFS, LADDER_EXERCISE_DEFS, SEED_CUES_BY_ID } from "./plan";
 import type { BackupPayload, BackupSourceData } from "./logic/backup";
 import { advancePullupStage, type PullupStage } from "./logic/progression";
+import { parseReminderSettings, type ReminderSettings } from "./logic/reminders";
 import { XP_EVENTS } from "./logic/xp";
 import type {
   ExerciseDef,
@@ -194,6 +195,17 @@ export async function getXpTotal(db: PugIronDb): Promise<number> {
 
 export async function getPullupStage(db: PugIronDb): Promise<PullupStage> {
   return getSettingValue<PullupStage>(db, "pullupStage", DEFAULT_PULLUP_STAGE);
+}
+
+export async function getReminderSettings(db: PugIronDb): Promise<ReminderSettings> {
+  return parseReminderSettings(await getSettingValue<unknown>(db, "reminderSettings", null));
+}
+
+export async function setReminderSettings(
+  db: PugIronDb,
+  settings: ReminderSettings
+): Promise<void> {
+  await setSettingValue(db, "reminderSettings", settings);
 }
 
 export async function getTodayWorkoutSessions(

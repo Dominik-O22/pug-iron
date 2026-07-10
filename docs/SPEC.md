@@ -69,6 +69,15 @@ Bottom tab bar, four tabs. No router — a `screen` state value in the app root.
 - Edit exercises: rename, sets, rep range, increment, reorder.
 - Danger zone: wipe all data (double confirm).
 
+### 2.6 Reminder (opt-in)
+
+- Off by default. Enabled from Settings after the user grants notification permission.
+- Local scheduled notification only (expo-notifications) — fully offline, no push, no network.
+- Fires at a user-set time on user-set weekdays. The copy is an invitation before a session ("Next up: Workout A.") and never references the past.
+- Logging a workout cancels the rest of today's reminder; ignoring a reminder produces no follow-up of any kind.
+- Settings persist under the settings key `reminderSettings` (`{ enabled, hour, minute, weekdays }`, ISO weekdays 1–7).
+- Foreground presentation is suppressed — the open app is the reminder.
+
 ## 3. Data model (expo-sqlite, schema v1)
 
 Domain shapes (what `src/logic/` and the UI speak):
@@ -187,4 +196,4 @@ Share via `expo-file-system` (write to cache dir) + `expo-sharing`; import via `
 - No cloud sync, accounts, or multi-device merge — export/import is the migration path.
 - No exercise library beyond the plan's ten movements (editable, but no picker UI).
 - No Bluetooth/PM5 pairing for the Concept2 in v1 — manual entry only. **Declared stretch goal**: passive BLE capture from the PM5 (public GATT spec, `react-native-ble-plx`, foreground only). First thing that forces a dev-client build instead of Expo Go; captured row sessions will need their own richer shape than `RowSession` — spec that when it starts.
-- No notifications/reminders in v1 (revisit only if asked — reminders can read as nagging, which violates §5's spirit).
+- A single opt-in pre-session reminder exists (§2.6). Anything beyond it — nagging, missed-session messaging, follow-ups, escalation — remains out of scope, as it violates §5's spirit.
