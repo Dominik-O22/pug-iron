@@ -46,6 +46,7 @@ export interface ExerciseDef {
   loadType: "weight" | "assist" | "body";
   measure?: "reps" | "seconds";
   incrementKg: number;
+  restSec?: number;
   note: string;
   cues: string[];
 }

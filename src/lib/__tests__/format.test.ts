@@ -20,7 +20,8 @@ describe("abbreviateExerciseName", () => {
       "pullup-negative": "NEGATIVE",
       "scap-pull": "SCAPULAR",
       "incline-db-press": "PRESS",
-      "oh-triceps-ext": "TRICEPS"
+      "oh-triceps-ext": "TRICEPS",
+      "rear-delt-raise": "REAR"
     });
   });
 

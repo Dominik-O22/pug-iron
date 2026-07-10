@@ -50,7 +50,7 @@ const sourceData: BackupSourceData = {
   settings: [
     { key: "xpTotal", value: 175 },
     { key: "targetWeightKg", value: 83 },
-    { key: "schemaVersion", value: 3 },
+    { key: "schemaVersion", value: 4 },
     { key: "pullupStage", value: "scap-pull" }
   ]
 };
@@ -82,11 +82,11 @@ describe("backup serialization", () => {
 
     const wrongVersion = validateBackupPayload({
       ...buildBackupPayload(sourceData, exportedAt),
-      schemaVersion: 4
+      schemaVersion: 5
     });
 
     expect(wrongVersion.ok).toBe(false);
-    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 4");
+    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 5");
   });
 
   it("rejects malformed records with a plain-language error", () => {
@@ -226,7 +226,8 @@ describe("backup serialization", () => {
         "custom-move",
         "dead-hang",
         "scap-pull",
-        "pullup-negative"
+        "pullup-negative",
+        "rear-delt-raise"
       ]);
       expect(result.backup.settings).toEqual([
         { key: "schemaVersion", value: BACKUP_SCHEMA_VERSION },
@@ -278,7 +279,8 @@ describe("backup serialization", () => {
       expect(result.backup.exercises.map((exercise) => exercise.id)).toEqual([
         "dead-hang",
         "scap-pull",
-        "pullup-negative"
+        "pullup-negative",
+        "rear-delt-raise"
       ]);
       expect(result.backup.settings).toEqual([
         { key: "schemaVersion", value: BACKUP_SCHEMA_VERSION },
@@ -361,7 +363,7 @@ describe("backup serialization", () => {
       ],
       settings: [
         { key: "xpTotal", value: 65 },
-        { key: "schemaVersion", value: 3 },
+        { key: "schemaVersion", value: 4 },
         { key: "pullupStage", value: "scap-pull" }
       ]
     };

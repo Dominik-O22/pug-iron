@@ -1,4 +1,4 @@
-import { LADDER_EXERCISE_DEFS, SEED_CUES_BY_ID } from "../plan";
+import { EXERCISE_DEFS, LADDER_EXERCISE_DEFS, SEED_CUES_BY_ID, SEED_REST_SEC_BY_ID } from "../plan";
 import type {
   ExerciseDef,
   ExerciseLog,
@@ -10,8 +10,8 @@ import type {
 } from "../types";
 
 export const BACKUP_APP = "pug-iron";
-export const BACKUP_SCHEMA_VERSION = 3;
-const SUPPORTED_IMPORT_VERSIONS = [1, 2, 3];
+export const BACKUP_SCHEMA_VERSION = 4;
+const SUPPORTED_IMPORT_VERSIONS = [1, 2, 3, 4];
 const PULLUP_STAGE_VALUES = ["dead-hang", "scap-pull", "pullup-negative", "pullup", "complete"];
 
 export type BackupPayload = {
@@ -120,6 +120,12 @@ export function validateBackupPayload(value: unknown): BackupParseResult {
     arrays.settings = shimSettingsToV3(arrays.settings, arrays.sessions);
   }
 
+  // Anything below v4 lacks per-exercise rest times and the rear-delt raise.
+  if (incomingVersion <= 3) {
+    arrays.exercises = shimExercisesToV4(arrays.exercises);
+    arrays.settings = bumpSchemaVersionSetting(arrays.settings);
+  }
+
   const validators: Array<[unknown[], (item: unknown, index: number) => string | null]> = [
     [arrays.sessions, validateWorkoutSession],
     [arrays.rows, validateRowSession],
@@ -186,6 +192,42 @@ function appendLadderDefs(exercises: unknown[]): unknown[] {
   }));
 
   return [...exercises, ...missing];
+}
+
+function shimExercisesToV4(exercises: unknown[]): unknown[] {
+  const shimmed = exercises.map((exercise) => {
+    const record = asRecord(exercise);
+
+    if (!record || record.restSec !== undefined) {
+      return exercise;
+    }
+
+    const id = typeof record.id === "string" ? record.id : "";
+
+    return { ...record, restSec: SEED_REST_SEC_BY_ID[id] ?? 90 };
+  });
+
+  const hasRearDelt = exercises.some((exercise) => asRecord(exercise)?.id === "rear-delt-raise");
+
+  if (hasRearDelt) {
+    return shimmed;
+  }
+
+  const rearDelt = EXERCISE_DEFS.find((exercise) => exercise.id === "rear-delt-raise");
+
+  return rearDelt ? [...shimmed, { ...rearDelt, cues: [...rearDelt.cues] }] : shimmed;
+}
+
+function bumpSchemaVersionSetting(settings: unknown[]): unknown[] {
+  return settings.map((setting) => {
+    const record = asRecord(setting);
+
+    if (!record || record.key !== "schemaVersion") {
+      return setting;
+    }
+
+    return { ...record, value: BACKUP_SCHEMA_VERSION };
+  });
 }
 
 function shimSettingsToV3(settings: unknown[], sessions: unknown[]): unknown[] {
@@ -504,6 +546,10 @@ function validateExerciseDef(value: unknown, index: number): string | null {
 
   if (!isNonNegativeFiniteNumber(record.incrementKg)) {
     return `${label} has an invalid increment.`;
+  }
+
+  if (record.restSec !== undefined && !isPositiveInteger(record.restSec)) {
+    return `${label} has an invalid rest time.`;
   }
 
   if (typeof record.note !== "string") {

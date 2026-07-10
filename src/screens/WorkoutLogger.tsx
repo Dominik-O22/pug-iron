@@ -51,7 +51,7 @@ type LadderMoment = {
   exerciseName: string;
 };
 
-const REST_DURATION_MS = 90000;
+const DEFAULT_REST_SEC = 90;
 const PROGRESSION_MOMENT_MS = 500;
 
 export function WorkoutLoggerModal({
@@ -191,7 +191,10 @@ export function WorkoutLoggerModal({
         draftIndex === exerciseIndex ? { ...draft, sets: updatedSets } : draft
       )
     );
-    setRest({ startedAt: Date.now(), durationMs: REST_DURATION_MS });
+    setRest({
+      startedAt: Date.now(),
+      durationMs: (activeDraft.exercise.restSec ?? DEFAULT_REST_SEC) * 1000
+    });
 
     if (nextSetIndex >= 0) {
       setSetIndexes((current) =>
