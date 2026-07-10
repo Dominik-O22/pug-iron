@@ -196,17 +196,6 @@ export async function getPullupStage(db: PugIronDb): Promise<PullupStage> {
   return getSettingValue<PullupStage>(db, "pullupStage", DEFAULT_PULLUP_STAGE);
 }
 
-export async function getLastWorkoutSession(db: PugIronDb): Promise<WorkoutSession | null> {
-  const row = await db.getFirstAsync<SessionRow>(
-    `SELECT id, date, workout, entries, progression_events, started_at, finished_at, xp
-     FROM sessions
-     ORDER BY started_at DESC, id DESC
-     LIMIT 1;`
-  );
-
-  return row ? mapSessionRow(row) : null;
-}
-
 export async function getTodayWorkoutSessions(
   db: PugIronDb,
   date: string

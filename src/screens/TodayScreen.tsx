@@ -25,7 +25,7 @@ import type { ExerciseDef, ExerciseLog, RowSession, WeighIn, WorkoutSession } fr
 type TodayData = {
   exercises: ExerciseDef[];
   latestLogs: Record<string, ExerciseLog>;
-  lastSession: WorkoutSession | null;
+  sessions: WorkoutSession[];
   todaySessions: WorkoutSession[];
   weighIns: WeighIn[];
 };
@@ -45,7 +45,7 @@ export function TodayScreen({
   onLogWeighIn: (weighIn: Omit<WeighIn, "id" | "xp">) => Promise<void>;
   onStartWorkout: (workout: WorkoutSession["workout"]) => void;
 }) {
-  const workout = nextWorkout(appData.lastSession);
+  const workout = nextWorkout(appData.sessions);
   const exercises = workoutExercisesForStage(appData.exercises, workout, pullupStage);
   const ladderExercise = ladderExerciseForStage(appData.exercises, pullupStage);
   const ladderLog = ladderExercise ? appData.latestLogs[ladderExercise.id] : undefined;

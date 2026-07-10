@@ -185,7 +185,12 @@ function ExerciseProgressPanel({
   const chartPoints = useMemo(() => toChartPoints(exercisePoints), [exercisePoints]);
   const latestPoint = exercisePoints[exercisePoints.length - 1] ?? null;
   const valueFormatter = buildExerciseValueFormatter(selectedExercise, exerciseMode);
-  const volumeLabel = selectedExercise.loadType === "assist" ? "Total reps" : "Volume";
+  const volumeLabel =
+    selectedExercise.measure === "seconds"
+      ? "Total seconds"
+      : selectedExercise.loadType === "weight"
+        ? "Volume"
+        : "Total reps";
 
   return (
     <Panel eyebrow="exercise chart">
@@ -426,9 +431,17 @@ function formatExerciseLatestValue(
 }
 
 function exerciseUnitLabel(exercise: ExerciseDef, mode: ExerciseProgressMode): string {
-  if (mode === "volume") {
-    return exercise.loadType === "assist" ? "reps" : "kg";
+  if (exercise.measure === "seconds") {
+    return "s";
   }
 
-  return exercise.loadType === "assist" ? "assist" : "kg";
+  if (mode === "volume") {
+    return exercise.loadType === "weight" ? "kg" : "reps";
+  }
+
+  if (exercise.loadType === "assist") {
+    return "assist";
+  }
+
+  return exercise.loadType === "weight" ? "kg" : "reps";
 }

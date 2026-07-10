@@ -4,11 +4,26 @@ import type { WorkoutSession } from "../../types";
 describe("nextWorkout", () => {
   it("starts with workout A when there is no session history", () => {
     expect(nextWorkout(null)).toBe("A");
+    expect(nextWorkout([])).toBe("A");
   });
 
-  it("alternates from the most recent workout", () => {
-    expect(nextWorkout({ workout: "A" })).toBe("B");
-    expect(nextWorkout({ workout: "B" })).toBe("A");
+  it("alternates from the most recent workout (sessions newest-first)", () => {
+    expect(nextWorkout([{ workout: "A" }])).toBe("B");
+    expect(nextWorkout([{ workout: "B" }])).toBe("A");
+  });
+
+  it("ignores standalone 'P' ladder sessions and follows the last A/B lift", () => {
+    // Newest-first: a P ladder session on top of an A→B rotation must still
+    // suggest A next (last real lift was B), not flip the rotation.
+    expect(nextWorkout([{ workout: "P" }, { workout: "B" }, { workout: "A" }])).toBe("A");
+    // A→B→A→P should suggest B (last real lift was A), not A again.
+    expect(
+      nextWorkout([{ workout: "P" }, { workout: "A" }, { workout: "B" }, { workout: "A" }])
+    ).toBe("B");
+  });
+
+  it("starts with A when only 'P' ladder sessions exist", () => {
+    expect(nextWorkout([{ workout: "P" }, { workout: "P" }])).toBe("A");
   });
 
   it("still alternates when the latest session is from the same local day", () => {
@@ -22,7 +37,7 @@ describe("nextWorkout", () => {
       progressionEvents: []
     };
 
-    expect(nextWorkout(todaySession)).toBe("B");
+    expect(nextWorkout([todaySession])).toBe("B");
   });
 });
 

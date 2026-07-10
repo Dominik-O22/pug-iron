@@ -11,7 +11,6 @@ import {
   deleteRowSessionKeepingXp,
   deleteWeighInKeepingXp,
   deleteWorkoutSessionKeepingXp,
-  getLastWorkoutSession,
   getLatestExerciseLogs,
   getLifetimeTotals,
   getPullupStage,
@@ -52,7 +51,6 @@ type AppData = {
   exercises: ExerciseDef[];
   lifetimeTotals: LifetimeTotals;
   latestLogs: Record<string, ExerciseLog>;
-  lastSession: WorkoutSession | null;
   pullupStage: PullupStage;
   rowSessions: RowSession[];
   sessions: WorkoutSession[];
@@ -81,7 +79,6 @@ function PugIronApp() {
     const [
       exercises,
       sessions,
-      lastSession,
       todaySessions,
       xpTotal,
       rowSessions,
@@ -92,7 +89,6 @@ function PugIronApp() {
     ] = await Promise.all([
       listExerciseDefs(database),
       listWorkoutSessions(database),
-      getLastWorkoutSession(database),
       getTodayWorkoutSessions(database, today),
       getXpTotal(database),
       listRowSessions(database),
@@ -110,7 +106,6 @@ function PugIronApp() {
       exercises,
       lifetimeTotals,
       latestLogs,
-      lastSession,
       pullupStage,
       rowSessions,
       sessions,
