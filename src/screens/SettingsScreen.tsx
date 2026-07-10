@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -400,9 +400,21 @@ function ReminderPanel({
   const [permissionOk, setPermissionOk] = useState(true);
 
   useEffect(() => {
-    if (settings.enabled) {
-      void hasNotificationPermission().then(setPermissionOk);
+    if (!settings.enabled) {
+      return;
     }
+
+    void hasNotificationPermission().then(setPermissionOk);
+
+    // Also re-check on foreground: the user may have flipped the permission in
+    // Android settings and come straight back to this panel.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void hasNotificationPermission().then(setPermissionOk);
+      }
+    });
+
+    return () => subscription.remove();
   }, [settings.enabled]);
 
   async function toggleEnabled() {

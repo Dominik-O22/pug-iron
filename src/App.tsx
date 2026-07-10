@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -125,16 +125,30 @@ function PugIronApp() {
     });
   }, []);
 
+  // Re-synced on foreground too: permission may have been granted or revoked in
+  // Android settings while backgrounded, and syncReminders is the only place the
+  // scheduled state gets reconciled with it.
   useEffect(() => {
     if (!appData) {
       return;
     }
 
-    void syncReminders({
-      settings: appData.reminderSettings,
-      next: isPrePullupStage(appData.pullupStage) ? "P" : nextWorkout(appData.sessions),
-      trainedToday: appData.todaySessions.length > 0
+    const sync = () =>
+      void syncReminders({
+        settings: appData.reminderSettings,
+        next: isPrePullupStage(appData.pullupStage) ? "P" : nextWorkout(appData.sessions),
+        trainedToday: appData.todaySessions.length > 0
+      });
+
+    sync();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        sync();
+      }
     });
+
+    return () => subscription.remove();
   }, [appData]);
 
   useEffect(() => {
