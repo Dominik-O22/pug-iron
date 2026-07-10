@@ -40,7 +40,7 @@ type ProgressionExercise = Pick<
 const FIRST_TIME_HINT =
   "first time: pick a weight where you'd fail 1–2 reps past the top of the range";
 
-// Assist scale 0–2; 2 = purple band (most help) — where a ladder graduate starts.
+// Assist bands 0–3 (higher = more help); a ladder graduate starts on 2 = purple.
 const FIRST_TIME_ASSIST = 2;
 
 export function deriveProgressionTarget(

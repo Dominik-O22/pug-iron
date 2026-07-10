@@ -9,3 +9,6 @@ yarn-debug.*
 yarn-error.*
 *.local
 .DS_Store
+
+# pi subagent artifacts
+.pi-subagents/

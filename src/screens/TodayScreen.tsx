@@ -418,10 +418,14 @@ function PullupLadderCard({
   const rung = ladderRungNumber(stage);
   const target = deriveProgressionTarget(exercise, latestLog);
   const isHold = exercise.measure === "seconds";
+  const isAssist = exercise.loadType === "assist";
   const holdTarget = target.sets[0]?.seconds ?? exercise.repLow;
   const scheme = isHold
     ? `${exercise.sets} × ${holdTarget}s`
-    : `${exercise.sets} × ${exercise.repLow}-${exercise.repHigh}`;
+    : isAssist
+      ? `${exercise.sets} × ${target.sets[0]?.reps ?? exercise.repLow}`
+      : `${exercise.sets} × ${exercise.repLow}-${exercise.repHigh}`;
+  const assistLevel = target.sets[0]?.weight ?? 2;
 
   return (
     <Panel eyebrow="pull-up ladder">
@@ -455,7 +459,14 @@ function PullupLadderCard({
           <Num weight="medium" className="text-[24px] text-mint">
             {scheme}
           </Num>
-          <Text className="font-barlow text-[13px] text-text-dim">{isHold ? "hold" : "reps"}</Text>
+          {isAssist ? (
+            <View className="flex-row items-center">
+              <Text className="font-barlow text-[13px] text-text-dim">assist </Text>
+              <Num className="text-[13px] text-text-dim">{assistLevel}</Num>
+            </View>
+          ) : (
+            <Text className="font-barlow text-[13px] text-text-dim">{isHold ? "hold" : "reps"}</Text>
+          )}
         </View>
       </View>
 
