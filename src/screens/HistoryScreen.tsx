@@ -268,7 +268,7 @@ function HistorySessionCard({ session }: { session: WorkoutSession }) {
         <View className="flex-1">
           <DateLine parts={parts} />
           <View className="mt-2 flex-row flex-wrap items-center gap-3">
-            <Metric value={formatVolume(volume)} unit="kg" />
+            {volume > 0 ? <Metric value={formatVolume(volume)} unit="kg" /> : null}
             <Metric value={setCount} unit={setCount === 1 ? "set" : "sets"} />
             {session.progressionEvents.length > 0 ? (
               <Metric
@@ -413,8 +413,10 @@ function WorkoutSessionDetail({
 }) {
   const parts = dateParts(session.date);
   const volume = calculateSessionVolume(session.entries);
-  const progressionNames = session.progressionEvents.map(
-    (exerciseId) => exerciseById.get(exerciseId)?.name ?? exerciseId
+  const progressionNames = session.progressionEvents.map((eventId) =>
+    eventId === "ladder-complete"
+      ? "Pull-up ladder complete"
+      : exerciseById.get(eventId)?.name ?? eventId
   );
   const { dialog, show } = useDialog();
 
@@ -425,11 +427,11 @@ function WorkoutSessionDetail({
 
       <Panel eyebrow="workout detail">
         <Text className="font-barlow-bold text-[32px] uppercase leading-[36px] text-text">
-          Workout {session.workout}
+          {session.workout === "P" ? "Pull-up ladder" : `Workout ${session.workout}`}
         </Text>
         <DateLine className="mt-2" parts={parts} />
         <View className="mt-5 gap-3">
-          <DetailMetric label="volume" unit="kg" value={formatVolume(volume)} />
+          {volume > 0 ? <DetailMetric label="volume" unit="kg" value={formatVolume(volume)} /> : null}
           <DetailMetric label="sets" value={countLoggedSets(session.entries)} />
           <DetailMetric label="xp" value={`+${session.xp}`} />
         </View>
@@ -609,7 +611,7 @@ function SessionEditor({
       <BackButton onPress={onCancel} />
       <Panel eyebrow="edit workout">
         <Text className="font-barlow-bold text-[32px] uppercase leading-[36px] text-text">
-          Workout {session.workout}
+          {session.workout === "P" ? "Pull-up ladder" : `Workout ${session.workout}`}
         </Text>
         <Text className="mt-2 font-barlow text-[16px] leading-[22px] text-text-dim">
           Adjust the saved sets. XP stays as earned.
@@ -620,7 +622,7 @@ function SessionEditor({
         const exercise = exerciseById.get(entry.exerciseId);
 
         return (
-          <Panel eyebrow={exercise?.loadType === "assist" ? "assist sets" : "weight sets"} key={entry.exerciseId}>
+          <Panel eyebrow={editorSetsLabel(exercise)} key={entry.exerciseId}>
             <Text className="font-barlow-bold text-[24px] leading-[28px] text-text">
               {exercise?.name ?? entry.exerciseId}
             </Text>
@@ -633,23 +635,46 @@ function SessionEditor({
                       {setIndex + 1}
                     </Num>
                   </View>
-                  <Stepper
-                    formatValue={formatWeight}
-                    label={exercise?.loadType === "assist" ? "Assist level" : "Weight"}
-                    min={0}
-                    onChange={(weight) => updateSet(entryIndex, setIndex, { weight })}
-                    step={exercise?.loadType === "assist" ? 1 : exercise?.incrementKg ?? 2}
-                    unit={exercise?.loadType === "assist" ? "band" : "kg"}
-                    value={set.weight}
-                  />
-                  <Stepper
-                    formatValue={(value) => String(value)}
-                    label="Reps"
-                    min={0}
-                    onChange={(reps) => updateSet(entryIndex, setIndex, { reps })}
-                    step={1}
-                    value={set.reps}
-                  />
+                  {exercise?.measure === "seconds" ? (
+                    <Stepper
+                      formatValue={(value) => String(value)}
+                      label="Hold"
+                      min={0}
+                      onChange={(seconds) => updateSet(entryIndex, setIndex, { seconds })}
+                      step={5}
+                      unit="s"
+                      value={set.seconds ?? 0}
+                    />
+                  ) : exercise?.loadType === "body" ? (
+                    <Stepper
+                      formatValue={(value) => String(value)}
+                      label="Reps"
+                      min={0}
+                      onChange={(reps) => updateSet(entryIndex, setIndex, { reps })}
+                      step={1}
+                      value={set.reps}
+                    />
+                  ) : (
+                    <>
+                      <Stepper
+                        formatValue={formatWeight}
+                        label={exercise?.loadType === "assist" ? "Assist level" : "Weight"}
+                        min={0}
+                        onChange={(weight) => updateSet(entryIndex, setIndex, { weight })}
+                        step={exercise?.loadType === "assist" ? 1 : exercise?.incrementKg ?? 2}
+                        unit={exercise?.loadType === "assist" ? "band" : "kg"}
+                        value={set.weight}
+                      />
+                      <Stepper
+                        formatValue={(value) => String(value)}
+                        label="Reps"
+                        min={0}
+                        onChange={(reps) => updateSet(entryIndex, setIndex, { reps })}
+                        step={1}
+                        value={set.reps}
+                      />
+                    </>
+                  )}
                 </View>
               ))}
             </View>
@@ -705,21 +730,65 @@ function ExerciseSetReadout({
               <Text className="font-barlow text-[16px] text-text-dim">Set </Text>
               <Num className="text-[16px] text-text-dim">{index + 1}</Num>
             </View>
-            <View className="flex-row items-center">
-              <Num weight="medium" className="text-[16px] text-mint">
-                {formatWeight(set.weight)}
-              </Num>
-              <Text className="ml-1 font-barlow text-[16px] text-text-dim">
-                {exercise?.loadType === "assist" ? "band" : "kg"}
-              </Text>
-              <Text className="mx-2 font-barlow text-[16px] text-text-dim">x</Text>
-              <Num weight="medium" className="text-[16px] text-mint">
-                {set.reps}
-              </Num>
-            </View>
+            <SetReadoutValue exercise={exercise} set={set} />
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+function editorSetsLabel(exercise?: ExerciseDef): string {
+  if (exercise?.measure === "seconds") {
+    return "hold sets";
+  }
+
+  if (exercise?.loadType === "body") {
+    return "bodyweight sets";
+  }
+
+  if (exercise?.loadType === "assist") {
+    return "assist sets";
+  }
+
+  return "weight sets";
+}
+
+function SetReadoutValue({ exercise, set }: { exercise?: ExerciseDef; set: SetEntry }) {
+  if (typeof set.seconds === "number") {
+    return (
+      <View className="flex-row items-baseline">
+        <Num weight="medium" className="text-[16px] text-mint">
+          {set.seconds}
+        </Num>
+        <Text className="ml-1 font-barlow text-[16px] text-text-dim">s</Text>
+      </View>
+    );
+  }
+
+  if (exercise?.loadType === "body") {
+    return (
+      <View className="flex-row items-baseline">
+        <Num weight="medium" className="text-[16px] text-mint">
+          {set.reps}
+        </Num>
+        <Text className="ml-1 font-barlow text-[16px] text-text-dim">reps</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-row items-center">
+      <Num weight="medium" className="text-[16px] text-mint">
+        {formatWeight(set.weight)}
+      </Num>
+      <Text className="ml-1 font-barlow text-[16px] text-text-dim">
+        {exercise?.loadType === "assist" ? "band" : "kg"}
+      </Text>
+      <Text className="mx-2 font-barlow text-[16px] text-text-dim">x</Text>
+      <Num weight="medium" className="text-[16px] text-mint">
+        {set.reps}
+      </Num>
     </View>
   );
 }

@@ -10,7 +10,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 8,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "Move to two-DB front squat when one DB feels light",
     cues: [
       "Elbows inside knees at the bottom",
@@ -27,7 +29,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 8,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "Feet planted, slight arch, full range",
     cues: [
       "Shoulder blades pinned back",
@@ -44,7 +48,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 10,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "Per side, knee on bench",
     cues: [
       "Flat back, brace the core",
@@ -59,9 +65,11 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     order: 4,
     sets: 3,
     repLow: 12,
-    repHigh: 15,
+    repHigh: 20,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 90,
     note: "Light weight, strict",
     cues: [
       "Lead with the elbows",
@@ -76,9 +84,11 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     order: 5,
     sets: 2,
     repLow: 10,
-    repHigh: 12,
+    repHigh: 15,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 90,
     note: "",
     cues: [
       "Elbows pinned to your sides",
@@ -95,7 +105,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 8,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "Hinge at hips, flat back",
     cues: [
       "Hinge at the hips, push them back",
@@ -112,7 +124,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 8,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "",
     cues: [
       "Brace the core, ribs down",
@@ -129,8 +143,10 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 5,
     repHigh: 10,
     loadType: "assist",
+    measure: "reps",
     incrementKg: 2.0,
-    note: "",
+    restSec: 150,
+    note: "Assist: 3 = purple + black, 2 = purple, 1 = black, 0 = none",
     cues: [
       "Start from a full dead hang",
       "Pull the elbows down and back",
@@ -146,7 +162,9 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     repLow: 8,
     repHigh: 12,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 150,
     note: "",
     cues: [
       "Bench around 30 degrees",
@@ -161,18 +179,106 @@ export const EXERCISE_DEFS: ExerciseDef[] = [
     order: 5,
     sets: 2,
     repLow: 10,
-    repHigh: 12,
+    repHigh: 15,
     loadType: "weight",
+    measure: "reps",
     incrementKg: 2.0,
+    restSec: 90,
     note: "",
     cues: [
       "Elbows in, point them forward",
       "Full stretch at the bottom",
       "Only the forearms move"
     ]
+  },
+  {
+    id: "rear-delt-raise",
+    name: "Rear delt raise",
+    workout: "B",
+    order: 6,
+    sets: 2,
+    repLow: 15,
+    repHigh: 20,
+    loadType: "weight",
+    measure: "reps",
+    incrementKg: 2.0,
+    restSec: 90,
+    note: "Bent over, light weight, strict",
+    cues: [
+      "Hinge forward, flat back",
+      "Raise out and slightly back",
+      "Pinkies lead, no swinging"
+    ]
+  },
+  {
+    id: "dead-hang",
+    name: "Dead hang",
+    workout: "P",
+    order: 1,
+    sets: 3,
+    repLow: 10,
+    repHigh: 30,
+    loadType: "body",
+    measure: "seconds",
+    incrementKg: 0,
+    restSec: 90,
+    note: "Build to 30 seconds before moving on",
+    cues: [
+      "Shoulders active, not shrugged",
+      "Ribs down, body still",
+      "Grip the bar, breathe steadily"
+    ]
+  },
+  {
+    id: "scap-pull",
+    name: "Scapular pull-up",
+    workout: "P",
+    order: 2,
+    sets: 3,
+    repLow: 5,
+    repHigh: 8,
+    loadType: "body",
+    measure: "reps",
+    incrementKg: 0,
+    restSec: 90,
+    note: "Keep the elbows straight",
+    cues: [
+      "Start from a dead hang",
+      "Pull the shoulders down, elbows straight",
+      "Pause high, control back to the hang"
+    ]
+  },
+  {
+    id: "pullup-negative",
+    name: "Negative pull-up",
+    workout: "P",
+    order: 3,
+    sets: 3,
+    repLow: 3,
+    repHigh: 5,
+    loadType: "body",
+    measure: "reps",
+    incrementKg: 0,
+    restSec: 150,
+    note: "Lower for about 5 seconds each rep",
+    cues: [
+      "Step or jump to chin over the bar",
+      "Lower for about 5 seconds",
+      "Stay tight into a full dead hang"
+    ]
   }
 ];
 
 export const SEED_CUES_BY_ID: Record<string, string[]> = Object.fromEntries(
   EXERCISE_DEFS.map((exercise) => [exercise.id, exercise.cues])
+);
+
+export const SEED_REST_SEC_BY_ID: Record<string, number> = Object.fromEntries(
+  EXERCISE_DEFS.map((exercise) => [exercise.id, exercise.restSec ?? 90])
+);
+
+// The pre-dumbbell pull-up ladder (workout "P"): seeded on the v3 migration and
+// re-injected when importing an older backup that predates the ladder.
+export const LADDER_EXERCISE_DEFS: ExerciseDef[] = EXERCISE_DEFS.filter(
+  (exercise) => exercise.workout === "P"
 );

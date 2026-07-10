@@ -34,6 +34,36 @@ const pullup: ExerciseDef = {
   cues: []
 };
 
+const scapPull: ExerciseDef = {
+  id: "scap-pull",
+  name: "Scapular pull-up",
+  workout: "P",
+  order: 2,
+  sets: 3,
+  repLow: 5,
+  repHigh: 8,
+  loadType: "body",
+  measure: "reps",
+  incrementKg: 0,
+  note: "",
+  cues: []
+};
+
+const deadHang: ExerciseDef = {
+  id: "dead-hang",
+  name: "Dead hang",
+  workout: "P",
+  order: 1,
+  sets: 3,
+  repLow: 10,
+  repHigh: 30,
+  loadType: "body",
+  measure: "seconds",
+  incrementKg: 0,
+  note: "",
+  cues: []
+};
+
 function session(
   date: string,
   exerciseId: string,
@@ -52,6 +82,27 @@ function session(
     startedAt,
     workout: "A",
     xp: 100
+  };
+}
+
+function holdSession(
+  date: string,
+  exerciseId: string,
+  seconds: number[],
+  startedAt = Date.parse(`${date}T08:00:00.000Z`)
+): WorkoutSession {
+  return {
+    date,
+    entries: [
+      {
+        exerciseId,
+        sets: seconds.map((value) => ({ weight: 0, reps: 0, seconds: value }))
+      }
+    ],
+    progressionEvents: [],
+    startedAt,
+    workout: "P",
+    xp: 40
   };
 }
 
@@ -183,6 +234,54 @@ describe("exercise chart logic", () => {
         "volume"
       )
     ).toEqual([{ date: "2026-07-01", rawValue: 18, value: 18 }]);
+  });
+
+  it("plots hold seconds for seconds-measure exercises instead of weight", () => {
+    expect(
+      buildExerciseProgressSeries(
+        [holdSession("2026-07-01", "dead-hang", [10, 12, 10])],
+        deadHang,
+        "top-set"
+      )
+    ).toEqual([{ date: "2026-07-01", rawValue: 12, value: 12 }]);
+
+    expect(
+      buildExerciseProgressSeries(
+        [holdSession("2026-07-01", "dead-hang", [10, 12, 10])],
+        deadHang,
+        "volume"
+      )
+    ).toEqual([{ date: "2026-07-01", rawValue: 32, value: 32 }]);
+  });
+
+  it("counts reps for body-weight rep exercises instead of zero-weight volume", () => {
+    expect(
+      buildExerciseProgressSeries(
+        [
+          session("2026-07-01", "scap-pull", [
+            [0, 8],
+            [0, 7],
+            [0, 6]
+          ])
+        ],
+        scapPull,
+        "top-set"
+      )
+    ).toEqual([{ date: "2026-07-01", rawValue: 8, value: 8 }]);
+
+    expect(
+      buildExerciseProgressSeries(
+        [
+          session("2026-07-01", "scap-pull", [
+            [0, 8],
+            [0, 7],
+            [0, 6]
+          ])
+        ],
+        scapPull,
+        "volume"
+      )
+    ).toEqual([{ date: "2026-07-01", rawValue: 21, value: 21 }]);
   });
 
   it("returns an empty exercise series when there are no matching logs", () => {

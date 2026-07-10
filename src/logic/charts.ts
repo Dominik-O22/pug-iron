@@ -11,7 +11,7 @@ export type ExerciseProgressPoint = DatedValue & {
   rawValue: number;
 };
 
-type ExerciseChartDef = Pick<ExerciseDef, "id" | "loadType">;
+type ExerciseChartDef = Pick<ExerciseDef, "id" | "loadType" | "measure">;
 
 export const ASSIST_LEVEL_MAX = 4;
 
@@ -120,13 +120,30 @@ export function buildExerciseProgressSeries(
         return [];
       }
 
+      // Hold exercises (dead hang) and body-weight rep exercises (scap pull,
+      // negative pull-up) carry their signal in seconds/reps, not weight — never
+      // route them through the weight*reps math or they flat-line at zero.
+      const isHold = exercise.measure === "seconds";
+      const isRepCount = exercise.loadType === "assist" || exercise.loadType === "body";
+
       if (mode === "volume") {
-        const rawValue =
-          exercise.loadType === "assist"
-            ? entry.sets.reduce((total, set) => total + set.reps, 0)
-            : entry.sets.reduce((total, set) => total + set.weight * set.reps, 0);
+        let rawValue: number;
+
+        if (isHold) {
+          rawValue = entry.sets.reduce((total, set) => total + (set.seconds ?? 0), 0);
+        } else if (isRepCount) {
+          rawValue = entry.sets.reduce((total, set) => total + set.reps, 0);
+        } else {
+          rawValue = entry.sets.reduce((total, set) => total + set.weight * set.reps, 0);
+        }
 
         return [{ date: session.date, rawValue, value: roundTo(rawValue, 2) }];
+      }
+
+      if (isHold) {
+        const rawValue = Math.max(...entry.sets.map((set) => set.seconds ?? 0));
+
+        return [{ date: session.date, rawValue, value: rawValue }];
       }
 
       if (exercise.loadType === "assist") {
@@ -139,6 +156,12 @@ export function buildExerciseProgressSeries(
             value: ASSIST_LEVEL_MAX - rawValue
           }
         ];
+      }
+
+      if (exercise.loadType === "body") {
+        const rawValue = Math.max(...entry.sets.map((set) => set.reps));
+
+        return [{ date: session.date, rawValue, value: rawValue }];
       }
 
       const rawValue = Math.max(...entry.sets.map((set) => set.weight));

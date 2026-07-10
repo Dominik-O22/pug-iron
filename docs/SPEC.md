@@ -15,8 +15,8 @@ Full-body sessions alternating A/B regardless of calendar day (week 1: A–B–A
 | `goblet-squat` | Goblet squat | 3 × 8–12 | Move to two-DB front squat when one DB feels light |
 | `flat-db-press` | Flat dumbbell bench press | 3 × 8–12 | Feet planted, slight arch, full range |
 | `one-arm-row` | One-arm dumbbell row | 3 × 10–12 | Per side, knee on bench |
-| `lateral-raise` | Dumbbell lateral raise | 3 × 12–15 | Light weight, strict |
-| `hammer-curl` | Hammer curl | 2 × 10–12 | |
+| `lateral-raise` | Dumbbell lateral raise | 3 × 12–20 | Light weight, strict |
+| `hammer-curl` | Hammer curl | 2 × 10–15 | |
 
 ### Workout B — hinge pattern · vertical push & pull · upper chest
 
@@ -26,9 +26,14 @@ Full-body sessions alternating A/B regardless of calendar day (week 1: A–B–A
 | `seated-oh-press` | Seated dumbbell shoulder press | 3 × 8–12 | |
 | `pullup` | Pull-up (band-assisted) | 3 × 5–10 | `loadType: 'assist'` — see §4 |
 | `incline-db-press` | Incline dumbbell press | 3 × 8–12 | |
-| `oh-triceps-ext` | Overhead triceps extension | 2 × 10–12 | |
+| `oh-triceps-ext` | Overhead triceps extension | 2 × 10–15 | |
+| `rear-delt-raise` | Rear delt raise | 2 × 15–20 | Light weight, strict — balances pull volume |
 
 Weight increment default: **2.0 kg per dumbbell** (ATLETICA QUAD adjustment step), overridable per exercise.
+
+Rest between sets is per exercise (`restSec`): **150 s after compound sets, 90 s after isolations**. Isolation rep ranges are deliberately wide because 2 kg per dumbbell is a big jump on small muscles — double progression needs the headroom.
+
+Band-assist mapping for `pullup` (two bands on hand): level 3 = purple + black, 2 = purple, 1 = black, 0 = unassisted.
 
 ## 2. Screens
 
@@ -46,7 +51,7 @@ Bottom tab bar, four tabs. No router — a `screen` state value in the app root.
 
 - One exercise at a time, big card, swipe/next navigation; also an overview list to jump.
 - Warm-up checklist header before the first exercise: 4 min easy row + one light set of the session's first two exercises — tappable checkboxes, purely visual, never stored (§1).
-- Per set: weight (kg, stepper steps by the exercise's `incrementKg` — matching the dumbbell's real adjustment step; storage precision stays 0.5) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the 90 s rest countdown (visible, `expo-haptics` buzz at 0 s; screen kept awake during the logger via `expo-keep-awake`).
+- Per set: weight (kg, stepper steps by the exercise's `incrementKg` — matching the dumbbell's real adjustment step; storage precision stays 0.5) and reps (prefilled with target) as large steppers — **operable with a phone in one shaking post-set hand**. Tap *Log set* → starts the rest countdown (the exercise's `restSec`; 150 s compounds, 90 s isolations) (visible, `expo-haptics` buzz at 0 s; screen kept awake during the logger via `expo-keep-awake`).
 - Autopilot line per exercise: e.g. *"Last: 12/11/10 @ 14 kg → hit 12s across, then 16 kg next time"*.
 - Finishing: summary (sets logged, any progression events), XP awarded, save to SQLite. Partial workouts save fine — logging 3 of 5 exercises is a valid session.
 - Abandoning mid-workout keeps a draft in memory only; explicit *Discard* available.
@@ -99,8 +104,9 @@ interface ExerciseDef {         // seeded, user-editable
   sets: number
   repLow: number
   repHigh: number
-  loadType: 'weight' | 'assist' // 'assist' = band level 0–4, lower is harder, 0 = unassisted
+  loadType: 'weight' | 'assist' // 'assist' = band level 0–3, lower is harder, 0 = unassisted (§1 mapping)
   incrementKg: number           // ignored for 'assist'; also the weight-stepper step
+  restSec: number               // rest countdown after a logged set; 150 compounds, 90 isolations
   note: string
   cues: string[]                // short form cues, shown expandable in the logger; seeded, editable
 }
@@ -129,6 +135,8 @@ CREATE INDEX idx_weighins_date ON weighins(date);
 Set/rep detail stays as a JSON column (`entries`) — the app never queries inside a set, only whole sessions by date; keeps export/import trivially shaped like the domain types. Schema version via `PRAGMA user_version`; any change = bump + in-order migration steps on open. WAL mode on.
 
 Schema v2: adds `exercises.cues TEXT NOT NULL DEFAULT '[]'` (JSON string[]). Backup `schemaVersion` bumps to 2; v1 backups import via shim (missing `cues` → seed defaults for known ids, else `[]`).
+
+Schema v4: adds `exercises.rest_sec INTEGER NOT NULL DEFAULT 90`, seeds `rear-delt-raise`, and widens the isolation rep ranges (only where the def still matches the old seed — ranges are user-editable). Backup `schemaVersion` bumps to 4; older backups import via shim (missing `restSec` → seed defaults for known ids, else 90; missing `rear-delt-raise` → appended).
 
 ## 4. Progression autopilot (double progression)
 

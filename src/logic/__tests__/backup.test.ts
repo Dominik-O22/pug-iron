@@ -50,7 +50,8 @@ const sourceData: BackupSourceData = {
   settings: [
     { key: "xpTotal", value: 175 },
     { key: "targetWeightKg", value: 83 },
-    { key: "schemaVersion", value: 2 }
+    { key: "schemaVersion", value: 4 },
+    { key: "pullupStage", value: "scap-pull" }
   ]
 };
 
@@ -81,11 +82,11 @@ describe("backup serialization", () => {
 
     const wrongVersion = validateBackupPayload({
       ...buildBackupPayload(sourceData, exportedAt),
-      schemaVersion: 3
+      schemaVersion: 5
     });
 
     expect(wrongVersion.ok).toBe(false);
-    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 3");
+    expect(wrongVersion.ok ? "" : wrongVersion.error).toContain("schema version 5");
   });
 
   it("rejects malformed records with a plain-language error", () => {
@@ -163,7 +164,7 @@ describe("backup serialization", () => {
       exercises: 1,
       rows: 2,
       sessions: 1,
-      settings: 4,
+      settings: 5,
       weighins: 1
     });
   });
@@ -218,7 +219,20 @@ describe("backup serialization", () => {
         "Control down, drive up"
       ]);
       expect(result.backup.exercises[1].cues).toEqual([]);
-      expect(result.backup.settings).toEqual([{ key: "schemaVersion", value: BACKUP_SCHEMA_VERSION }]);
+      // The ladder defs are injected on a pre-v3 import, and the stage defaults to
+      // the first rung because the backup has no pull-up logs.
+      expect(result.backup.exercises.map((exercise) => exercise.id)).toEqual([
+        "goblet-squat",
+        "custom-move",
+        "dead-hang",
+        "scap-pull",
+        "pullup-negative",
+        "rear-delt-raise"
+      ]);
+      expect(result.backup.settings).toEqual([
+        { key: "schemaVersion", value: BACKUP_SCHEMA_VERSION },
+        { key: "pullupStage", value: "dead-hang" }
+      ]);
     }
   });
 
@@ -243,5 +257,127 @@ describe("backup serialization", () => {
 
     expect(invalidCues.ok).toBe(false);
     expect(invalidCues.ok ? "" : invalidCues.error).toBe("Exercise 1 has invalid form cues.");
+  });
+
+  it("seeds the ladder and defaults the stage to dead-hang for a v2 backup without pull-up logs", () => {
+    const result = deserializeBackup(
+      JSON.stringify({
+        app: BACKUP_APP,
+        schemaVersion: 2,
+        exportedAt: "2026-07-06T10:30:00.000Z",
+        sessions: [],
+        rows: [],
+        weighins: [],
+        exercises: [],
+        settings: [{ key: "schemaVersion", value: 2 }]
+      })
+    );
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.backup.exercises.map((exercise) => exercise.id)).toEqual([
+        "dead-hang",
+        "scap-pull",
+        "pullup-negative",
+        "rear-delt-raise"
+      ]);
+      expect(result.backup.settings).toEqual([
+        { key: "schemaVersion", value: BACKUP_SCHEMA_VERSION },
+        { key: "pullupStage", value: "dead-hang" }
+      ]);
+    }
+  });
+
+  it("defaults the stage to pullup for a v2 backup that already logged pull-ups", () => {
+    const result = deserializeBackup(
+      JSON.stringify({
+        app: BACKUP_APP,
+        schemaVersion: 2,
+        exportedAt: "2026-07-06T10:30:00.000Z",
+        sessions: [
+          {
+            id: 1,
+            date: "2026-07-06",
+            workout: "B",
+            entries: [{ exerciseId: "pullup", sets: [{ weight: 2, reps: 5 }] }],
+            startedAt: 1783338000000,
+            xp: 100,
+            progressionEvents: []
+          }
+        ],
+        rows: [],
+        weighins: [],
+        exercises: [],
+        settings: [{ key: "schemaVersion", value: 2 }]
+      })
+    );
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.backup.settings).toContainEqual({ key: "pullupStage", value: "pullup" });
+    }
+  });
+
+  it("round-trips a v3 hold session without dropping seconds or the P workout", () => {
+    const holdSource: BackupSourceData = {
+      sessions: [
+        {
+          id: 9,
+          date: "2026-07-09",
+          workout: "P",
+          entries: [
+            {
+              exerciseId: "dead-hang",
+              sets: [
+                { weight: 0, reps: 0, seconds: 30 },
+                { weight: 0, reps: 0, seconds: 30 },
+                { weight: 0, reps: 0, seconds: 30 }
+              ]
+            }
+          ],
+          startedAt: 1783510000000,
+          finishedAt: 1783510300000,
+          xp: 65,
+          progressionEvents: ["dead-hang"]
+        }
+      ],
+      rows: [],
+      weighins: [],
+      exercises: [
+        {
+          id: "dead-hang",
+          name: "Dead hang",
+          workout: "P",
+          order: 1,
+          sets: 3,
+          repLow: 10,
+          repHigh: 30,
+          loadType: "body",
+          measure: "seconds",
+          incrementKg: 0,
+          note: "",
+          cues: []
+        }
+      ],
+      settings: [
+        { key: "xpTotal", value: 65 },
+        { key: "schemaVersion", value: 4 },
+        { key: "pullupStage", value: "scap-pull" }
+      ]
+    };
+    const result = deserializeBackup(serializeBackup(holdSource, exportedAt));
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.backup).toEqual({
+        app: BACKUP_APP,
+        schemaVersion: BACKUP_SCHEMA_VERSION,
+        exportedAt: "2026-07-06T10:30:00.000Z",
+        ...holdSource
+      });
+    }
   });
 });

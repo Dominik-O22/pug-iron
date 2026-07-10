@@ -1,4 +1,6 @@
 import {
+  advancePullupStage,
+  calculateWorkoutXp,
   detectProgressionEvents,
   deriveProgressionTarget,
   deriveProgressionTargets
@@ -32,6 +34,67 @@ const assistExercise: ExerciseDef = {
   note: "",
   cues: []
 };
+
+const holdExercise: ExerciseDef = {
+  id: "dead-hang",
+  name: "Dead hang",
+  workout: "P",
+  order: 1,
+  sets: 3,
+  repLow: 10,
+  repHigh: 30,
+  loadType: "body",
+  measure: "seconds",
+  incrementKg: 0,
+  note: "",
+  cues: []
+};
+
+const ladderExercises: ExerciseDef[] = [
+  holdExercise,
+  {
+    id: "scap-pull",
+    name: "Scapular pull-up",
+    workout: "P",
+    order: 2,
+    sets: 3,
+    repLow: 5,
+    repHigh: 8,
+    loadType: "body",
+    measure: "reps",
+    incrementKg: 0,
+    note: "",
+    cues: []
+  },
+  {
+    id: "pullup-negative",
+    name: "Pull-up negative",
+    workout: "P",
+    order: 3,
+    sets: 3,
+    repLow: 3,
+    repHigh: 5,
+    loadType: "body",
+    measure: "reps",
+    incrementKg: 0,
+    note: "",
+    cues: []
+  },
+  {
+    id: "pullup",
+    name: "Pull-up (band-assisted)",
+    workout: "P",
+    order: 4,
+    sets: 3,
+    repLow: 5,
+    repHigh: 10,
+    loadType: "assist",
+    measure: "reps",
+    incrementKg: 2,
+    note: "",
+    cues: []
+  }
+];
 
 function log(exerciseId: string, sets: Array<[number, number]>): ExerciseLog {
   return {
@@ -198,6 +261,112 @@ describe("deriveProgressionTarget", () => {
       ]
     });
   });
+
+  it("adds five seconds when every hold set reaches its current target", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 10 },
+        { weight: 0, reps: 0, seconds: 10 },
+        { weight: 0, reps: 0, seconds: 10 }
+      ]
+    });
+
+    expect(target).toMatchObject({
+      instruction: "add hold time: 15s/15s/15s",
+      rule: "add-hold-time",
+      progressionEvent: null,
+      sets: [
+        { weight: 0, reps: 0, seconds: 15 },
+        { weight: 0, reps: 0, seconds: 15 },
+        { weight: 0, reps: 0, seconds: 15 }
+      ]
+    });
+  });
+
+  it("keys the hold target off the weakest set so uneven sets keep the +5s cadence", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 22 },
+        { weight: 0, reps: 0, seconds: 18 },
+        { weight: 0, reps: 0, seconds: 15 }
+      ]
+    });
+
+    expect(target).toMatchObject({
+      instruction: "add hold time: 20s/20s/20s",
+      rule: "add-hold-time",
+      sets: [
+        { weight: 0, reps: 0, seconds: 20 },
+        { weight: 0, reps: 0, seconds: 20 },
+        { weight: 0, reps: 0, seconds: 20 }
+      ]
+    });
+  });
+
+  it("holds at the floor when a set stays below the starting hold time", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 12 },
+        { weight: 0, reps: 0, seconds: 9 },
+        { weight: 0, reps: 0, seconds: 8 }
+      ]
+    });
+
+    expect(target.rule).toBe("hold-load");
+    expect(target.sets.every((set) => set.seconds === 10)).toBe(true);
+  });
+
+  it("caps hold targets at thirty seconds", () => {
+    const target = deriveProgressionTarget(holdExercise, {
+      exerciseId: "dead-hang",
+      sets: [
+        { weight: 0, reps: 0, seconds: 30 },
+        { weight: 0, reps: 0, seconds: 30 },
+        { weight: 0, reps: 0, seconds: 30 }
+      ]
+    });
+
+    expect(target.rule).toBe("hold-load");
+    expect(target.sets).toEqual([
+      { weight: 0, reps: 0, seconds: 30 },
+      { weight: 0, reps: 0, seconds: 30 },
+      { weight: 0, reps: 0, seconds: 30 }
+    ]);
+  });
+
+  it("seeds a first-time assist exercise at the purple band", () => {
+    expect(deriveProgressionTarget(assistExercise, null)).toEqual({
+      exerciseId: "pullup",
+      hasHistory: false,
+      instruction: "assist 2 × 5/5/5",
+      loadType: "assist",
+      progressionEvent: null,
+      rule: "first-time",
+      sets: [
+        { weight: 2, reps: 5 },
+        { weight: 2, reps: 5 },
+        { weight: 2, reps: 5 }
+      ]
+    });
+  });
+
+  it("shows a plain rep target for a bodyweight exercise with no history", () => {
+    expect(deriveProgressionTarget(ladderExercises[1], null)).toMatchObject({
+      hasHistory: false,
+      instruction: "5/5/5",
+      loadType: "body",
+      progressionEvent: null,
+      rule: "hold-load",
+      sets: [
+        { weight: null, reps: 5 },
+        { weight: null, reps: 5 },
+        { weight: null, reps: 5 }
+      ]
+    });
+  });
 });
 
 describe("detectProgressionEvents", () => {
@@ -322,3 +491,84 @@ describe("detectProgressionEvents", () => {
     ).toEqual([]);
   });
 });
+
+describe("pull-up ladder progression", () => {
+  it("advances through each of the four graduation thresholds", () => {
+    expect(
+      advancePullupStage("dead-hang", ladderExercises, [
+        logHold("dead-hang", [30, 30, 30])
+      ])
+    ).toEqual({ stage: "scap-pull", progressionEvent: "dead-hang" });
+
+    expect(
+      advancePullupStage("scap-pull", ladderExercises, [
+        log("scap-pull", [
+          [0, 8],
+          [0, 8],
+          [0, 8]
+        ])
+      ])
+    ).toEqual({ stage: "pullup-negative", progressionEvent: "scap-pull" });
+
+    expect(
+      advancePullupStage("pullup-negative", ladderExercises, [
+        log("pullup-negative", [
+          [0, 5],
+          [0, 5],
+          [0, 5]
+        ])
+      ])
+    ).toEqual({ stage: "pullup", progressionEvent: "pullup-negative" });
+
+    expect(
+      advancePullupStage("pullup", ladderExercises, [
+        log("pullup", [
+          [2, 5],
+          [2, 5],
+          [2, 5]
+        ])
+      ])
+    ).toEqual({ stage: "complete", progressionEvent: "ladder-complete" });
+  });
+
+  it("completes the ladder from a stronger band than purple", () => {
+    expect(
+      advancePullupStage("pullup", ladderExercises, [
+        log("pullup", [
+          [1, 5],
+          [1, 6],
+          [0, 5]
+        ])
+      ])
+    ).toEqual({ stage: "complete", progressionEvent: "ladder-complete" });
+  });
+
+  it("does not demote a stage or emit the completion event twice", () => {
+    expect(
+      advancePullupStage("scap-pull", ladderExercises, [
+        logHold("dead-hang", [30, 30, 30])
+      ])
+    ).toEqual({ stage: "scap-pull", progressionEvent: null });
+
+    expect(
+      advancePullupStage("complete", ladderExercises, [
+        log("pullup", [
+          [2, 5],
+          [2, 5],
+          [2, 5]
+        ])
+      ])
+    ).toEqual({ stage: "complete", progressionEvent: null });
+  });
+
+  it("awards forty XP for a P session", () => {
+    expect(calculateWorkoutXp("P")).toBe(40);
+  });
+});
+
+function logHold(exerciseId: string, seconds: number[]): ExerciseLog {
+  return {
+    exerciseId,
+    sets: seconds.map((value) => ({ weight: 0, reps: 0, seconds: value }))
+  };
+}

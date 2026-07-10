@@ -684,7 +684,7 @@ function ActionButton({
 }
 
 function normalizeExerciseOrders(exercises: ExerciseDef[]): ExerciseDef[] {
-  const nextOrder: Record<WorkoutSession["workout"], number> = { A: 0, B: 0 };
+  const nextOrder: Record<WorkoutSession["workout"], number> = { A: 0, B: 0, P: 0 };
 
   return exercises.map((exercise) => ({
     ...exercise,

@@ -25,12 +25,15 @@ import {
   type RestState
 } from "../lib/session";
 import {
+  advancePullupStage,
+  calculateWorkoutXp,
   detectProgressionEvents,
   deriveProgressionTarget,
-  type ProgressionEventTarget
+  type ProgressionEventTarget,
+  type PullupStage
 } from "../logic/progression";
+import { resolveLadderExerciseId } from "../logic/pullup";
 import { calculateSessionVolume } from "../logic/workouts";
-import { XP_EVENTS } from "../logic/xp";
 import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
 
 export type LoggerState = {
@@ -43,19 +46,26 @@ type ProgressionSummaryEvent = {
   target: ProgressionEventTarget;
 };
 
-const REST_DURATION_MS = 90000;
+type LadderMoment = {
+  complete: boolean;
+  exerciseName: string;
+};
+
+const DEFAULT_REST_SEC = 90;
 const PROGRESSION_MOMENT_MS = 500;
 
 export function WorkoutLoggerModal({
   exercises,
   latestLogs,
   loggerState,
+  pullupStage,
   onClose,
   onSave
 }: {
   exercises: ExerciseDef[];
   latestLogs: Record<string, ExerciseLog>;
   loggerState: LoggerState;
+  pullupStage: PullupStage;
   onClose: () => void;
   onSave: (session: WorkoutSession) => Promise<void>;
 }) {
@@ -73,6 +83,7 @@ export function WorkoutLoggerModal({
         sets: progressionTarget.sets.map((set) => ({
           weight: set.weight ?? 0,
           reps: set.reps,
+          ...(typeof set.seconds === "number" ? { seconds: set.seconds } : {}),
           logged: false
         }))
       };
@@ -88,10 +99,37 @@ export function WorkoutLoggerModal({
   const warmupExercises = useMemo(() => exercises.slice(0, 2), [exercises]);
   const loggedEntries = useMemo(() => buildLoggedEntries(draftExercises), [draftExercises]);
   const loggedSetCount = useMemo(() => countLoggedSets(loggedEntries), [loggedEntries]);
-  const progressionEvents = useMemo(
+  const standardEvents = useMemo(
     () => detectProgressionEvents(exercises, latestLogs, loggedEntries),
     [exercises, latestLogs, loggedEntries]
   );
+  const stageAdvance = useMemo(
+    () => advancePullupStage(pullupStage, exercises, loggedEntries),
+    [exercises, loggedEntries, pullupStage]
+  );
+  // A ladder graduation counts as one more progression event: it stacks the same
+  // +25 XP and rides the same rank pipeline as a standard load bump.
+  const progressionEvents = useMemo(() => {
+    const event = stageAdvance.progressionEvent;
+
+    if (!event || standardEvents.includes(event)) {
+      return standardEvents;
+    }
+
+    return [...standardEvents, event];
+  }, [standardEvents, stageAdvance]);
+  const ladderMoment = useMemo<LadderMoment | null>(() => {
+    if (stageAdvance.progressionEvent === null) {
+      return null;
+    }
+
+    const advanced = exercises.find((exercise) => exercise.id === resolveLadderExerciseId(pullupStage));
+
+    return {
+      complete: stageAdvance.stage === "complete",
+      exerciseName: advanced?.name ?? "Pull-up ladder"
+    };
+  }, [exercises, pullupStage, stageAdvance]);
   const progressionSummaryEvents = useMemo(() => {
     const eventIds = new Set(progressionEvents);
 
@@ -105,7 +143,7 @@ export function WorkoutLoggerModal({
       return [{ exerciseName: draft.exercise.name, target: eventTarget }];
     });
   }, [draftExercises, progressionEvents]);
-  const xpAwarded = XP_EVENTS.workoutSessionSaved + progressionEvents.length * XP_EVENTS.progressionEvent;
+  const xpAwarded = calculateWorkoutXp(loggerState.workout, progressionEvents.length);
   const activeDraft = draftExercises[exerciseIndex];
   const activeSetIndex = Math.min(setIndexes[exerciseIndex] ?? 0, activeDraft.sets.length - 1);
   const activeSet = activeDraft.sets[activeSetIndex];
@@ -153,7 +191,10 @@ export function WorkoutLoggerModal({
         draftIndex === exerciseIndex ? { ...draft, sets: updatedSets } : draft
       )
     );
-    setRest({ startedAt: Date.now(), durationMs: REST_DURATION_MS });
+    setRest({
+      startedAt: Date.now(),
+      durationMs: (activeDraft.exercise.restSec ?? DEFAULT_REST_SEC) * 1000
+    });
 
     if (nextSetIndex >= 0) {
       setSetIndexes((current) =>
@@ -243,7 +284,7 @@ export function WorkoutLoggerModal({
                   workout logger
                 </Text>
                 <Text className="mt-1 font-barlow-bold text-[24px] uppercase leading-[28px] text-text">
-                  Workout {loggerState.workout}
+                  {loggerState.workout === "P" ? "Pull-up ladder" : `Workout ${loggerState.workout}`}
                 </Text>
               </View>
               <Pressable
@@ -262,6 +303,7 @@ export function WorkoutLoggerModal({
 
           {mode === "summary" || mode === "saving" ? (
             <WorkoutSummary
+              ladderMoment={ladderMoment}
               loggedEntries={loggedEntries}
               loggedSetCount={loggedSetCount}
               mode={mode}
@@ -273,10 +315,12 @@ export function WorkoutLoggerModal({
           ) : (
             <>
               <ScrollView className="flex-1" contentContainerClassName="gap-3 p-5 pb-6">
-                <WarmupStrip
-                  hasLoggedAnySet={loggedSetCount > 0}
-                  warmupExercises={warmupExercises}
-                />
+                {loggerState.workout === "P" ? null : (
+                  <WarmupStrip
+                    hasLoggedAnySet={loggedSetCount > 0}
+                    warmupExercises={warmupExercises}
+                  />
+                )}
 
                 <ExerciseOverview
                   draftExercises={draftExercises}
@@ -324,33 +368,14 @@ export function WorkoutLoggerModal({
                     }
                   />
 
-                  <View className="mt-4 flex-row gap-3">
-                    <View className="flex-1">
-                      <CompactStepper
-                        formatValue={formatWeight}
-                        label={activeDraft.exercise.loadType === "assist" ? "Assist" : "Weight"}
-                        min={0}
-                        onChange={(weight) => updateActiveSet({ weight })}
-                        step={
-                          activeDraft.exercise.loadType === "assist"
-                            ? 1
-                            : activeDraft.exercise.incrementKg
-                        }
-                        unit={activeDraft.exercise.loadType === "assist" ? "band" : "kg"}
-                        value={activeSet.weight}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <CompactStepper
-                        formatValue={(value) => String(value)}
-                        label="Reps"
-                        min={0}
-                        onChange={(reps) => updateActiveSet({ reps })}
-                        step={1}
-                        value={activeSet.reps}
-                      />
-                    </View>
-                  </View>
+                  {/* key remounts the inputs when the active set changes, so a still-running
+                      hold timer can't commit the previous set's elapsed time into the new one */}
+                  <ActiveSetInputs
+                    key={`${exerciseIndex}:${activeSetIndex}`}
+                    exercise={activeDraft.exercise}
+                    onChange={updateActiveSet}
+                    set={activeSet}
+                  />
                 </Panel>
               </ScrollView>
 
@@ -409,6 +434,156 @@ export function WorkoutLoggerModal({
         {dialog}
       </View>
     </Modal>
+  );
+}
+
+function ActiveSetInputs({
+  exercise,
+  onChange,
+  set
+}: {
+  exercise: ExerciseDef;
+  onChange: (next: Partial<SetEntry>) => void;
+  set: SetEntry;
+}) {
+  if (exercise.measure === "seconds") {
+    return (
+      <View className="mt-4 gap-3">
+        <HoldTimerButton onCommit={(seconds) => onChange({ seconds })} seconds={set.seconds ?? 0} />
+        <CompactStepper
+          formatValue={(value) => String(value)}
+          label="Hold"
+          min={0}
+          onChange={(seconds) => onChange({ seconds })}
+          step={5}
+          unit="s"
+          value={set.seconds ?? 0}
+        />
+      </View>
+    );
+  }
+
+  if (exercise.loadType === "body") {
+    return (
+      <View className="mt-4">
+        <CompactStepper
+          formatValue={(value) => String(value)}
+          label="Reps"
+          min={0}
+          onChange={(reps) => onChange({ reps })}
+          step={1}
+          value={set.reps}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View className="mt-4 flex-row gap-3">
+      <View className="flex-1">
+        <CompactStepper
+          formatValue={formatWeight}
+          label={exercise.loadType === "assist" ? "Assist" : "Weight"}
+          min={0}
+          onChange={(weight) => onChange({ weight })}
+          step={exercise.loadType === "assist" ? 1 : exercise.incrementKg}
+          unit={exercise.loadType === "assist" ? "band" : "kg"}
+          value={set.weight}
+        />
+      </View>
+      <View className="flex-1">
+        <CompactStepper
+          formatValue={(value) => String(value)}
+          label="Reps"
+          min={0}
+          onChange={(reps) => onChange({ reps })}
+          step={1}
+          value={set.reps}
+        />
+      </View>
+    </View>
+  );
+}
+
+// Tap to start, tap to stop. The live count writes straight into the active set on
+// stop; the stepper below fine-tunes it. The logger already holds a keep-awake lock.
+function HoldTimerButton({
+  onCommit,
+  seconds
+}: {
+  onCommit: (seconds: number) => void;
+  seconds: number;
+}) {
+  const [running, setRunning] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef(0);
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+
+    const id = setInterval(() => {
+      setElapsed(Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)));
+    }, 200);
+
+    return () => clearInterval(id);
+  }, [running]);
+
+  function toggle() {
+    if (running) {
+      setRunning(false);
+      onCommit(Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)));
+      return;
+    }
+
+    startedAtRef.current = Date.now();
+    setElapsed(0);
+    setRunning(true);
+  }
+
+  const display = running ? elapsed : seconds;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: running }}
+      className={`min-h-[116px] items-center justify-center rounded-lg border ${
+        running ? "border-amber bg-petrol" : "border-line bg-panel-2"
+      }`}
+      onPress={toggle}
+    >
+      <Text
+        className={`font-mono-medium text-[11px] uppercase ${running ? "text-amber" : "text-text-dim"}`}
+        style={labelTracking}
+      >
+        {running ? "holding — tap to stop" : "tap to start hold"}
+      </Text>
+      <View className="mt-1 flex-row items-baseline">
+        <Num weight="medium" className={`text-[56px] leading-[60px] ${running ? "text-amber" : "text-mint"}`}>
+          {display}
+        </Num>
+        <Text className="ml-1 font-barlow text-[18px] text-text-dim">s</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function LadderMomentPanel({ moment }: { moment: LadderMoment }) {
+  return (
+    <View className="mt-5 rounded-lg border border-line bg-panel-2 p-4">
+      <Text className="font-mono-medium text-[11px] uppercase text-text-dim" style={labelTracking}>
+        ladder
+      </Text>
+      <Text className="mt-1 font-barlow-bold text-[28px] leading-[32px] text-amber">
+        {moment.complete ? "Ladder complete" : "Ladder up"}
+      </Text>
+      <Text className="mt-2 font-barlow-semibold text-[18px] leading-[22px] text-text">
+        {moment.complete
+          ? "Band pull-ups are yours — they carry on in Workout B."
+          : `${moment.exerciseName} cleared. Next rung is ready.`}
+      </Text>
+    </View>
   );
 }
 
@@ -656,6 +831,7 @@ function ExerciseOverview({
 }
 
 function WorkoutSummary({
+  ladderMoment,
   loggedEntries,
   loggedSetCount,
   mode,
@@ -664,6 +840,7 @@ function WorkoutSummary({
   progressionEvents,
   xpAwarded
 }: {
+  ladderMoment: LadderMoment | null;
   loggedEntries: ExerciseLog[];
   loggedSetCount: number;
   mode: "summary" | "saving";
@@ -680,9 +857,10 @@ function WorkoutSummary({
         <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Session ready</Text>
         <View className="mt-5 gap-3">
           <SummaryMetric label="sets logged" value={String(loggedSetCount)} />
-          <SummaryMetric label="volume" unit="kg" value={formatVolume(volume)} />
+          {volume > 0 ? <SummaryMetric label="volume" unit="kg" value={formatVolume(volume)} /> : null}
           <SummaryMetric label="xp awarded" value={`+${xpAwarded} XP`} />
         </View>
+        {ladderMoment ? <LadderMomentPanel moment={ladderMoment} /> : null}
         {progressionEvents.length > 0 ? <ProgressionMoment events={progressionEvents} /> : null}
       </Panel>
 

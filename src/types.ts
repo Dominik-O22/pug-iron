@@ -1,6 +1,7 @@
 export interface SetEntry {
   weight: number;
   reps: number;
+  seconds?: number;
 }
 
 export interface ExerciseLog {
@@ -11,7 +12,7 @@ export interface ExerciseLog {
 export interface WorkoutSession {
   id?: number;
   date: string;
-  workout: "A" | "B";
+  workout: "A" | "B" | "P";
   entries: ExerciseLog[];
   startedAt: number;
   finishedAt?: number;
@@ -37,13 +38,15 @@ export interface WeighIn {
 export interface ExerciseDef {
   id: string;
   name: string;
-  workout: "A" | "B";
+  workout: "A" | "B" | "P";
   order: number;
   sets: number;
   repLow: number;
   repHigh: number;
-  loadType: "weight" | "assist";
+  loadType: "weight" | "assist" | "body";
+  measure?: "reps" | "seconds";
   incrementKg: number;
+  restSec?: number;
   note: string;
   cues: string[];
 }
