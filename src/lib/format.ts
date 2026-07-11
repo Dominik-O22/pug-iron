@@ -7,12 +7,6 @@ export type DateParts = {
 
 export const labelTracking = { letterSpacing: 1.5 } as const;
 
-export function roundStepperValue(value: number, step: number): number {
-  const rounded = Math.round(value / step) * step;
-
-  return Number(rounded.toFixed(1));
-}
-
 export function formatWeight(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }

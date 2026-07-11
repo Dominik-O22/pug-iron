@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { labelTracking, roundStepperValue } from "../lib/format";
+import { labelTracking } from "../lib/format";
+import { stepStepperValue } from "../logic/stepper";
 import { Num } from "./Num";
 
 type StepperProps = {
   formatValue: (value: number) => string;
   label: string;
+  max?: number;
   min: number;
   onChange: (value: number) => void;
   step: number;
@@ -14,8 +16,8 @@ type StepperProps = {
   value: number;
 };
 
-export function Stepper({ formatValue, label, min, onChange, step, unit, value }: StepperProps) {
-  const { decrement, increment } = useStepping({ min, onChange, step, value });
+export function Stepper({ formatValue, label, max, min, onChange, step, unit, value }: StepperProps) {
+  const { decrement, increment } = useStepping({ max, min, onChange, step, value });
 
   return (
     <View>
@@ -50,8 +52,8 @@ export function Stepper({ formatValue, label, min, onChange, step, unit, value }
 
 // Two-column logger layout: label, big value, then a -/+ row underneath.
 // Same repeat-on-hold behavior; buttons stay >=56px for a tired thumb.
-export function CompactStepper({ formatValue, label, min, onChange, step, unit, value }: StepperProps) {
-  const { decrement, increment } = useStepping({ min, onChange, step, value });
+export function CompactStepper({ formatValue, label, max, min, onChange, step, unit, value }: StepperProps) {
+  const { decrement, increment } = useStepping({ max, min, onChange, step, value });
 
   return (
     <View>
@@ -85,11 +87,12 @@ export function CompactStepper({ formatValue, label, min, onChange, step, unit, 
 }
 
 function useStepping({
+  max,
   min,
   onChange,
   step,
   value
-}: Pick<StepperProps, "min" | "onChange" | "step" | "value">) {
+}: Pick<StepperProps, "max" | "min" | "onChange" | "step" | "value">) {
   const valueRef = useRef(value);
 
   useEffect(() => {
@@ -98,12 +101,12 @@ function useStepping({
 
   const changeBy = useCallback(
     (delta: number) => {
-      const nextValue = roundStepperValue(Math.max(min, valueRef.current + delta), step);
+      const nextValue = stepStepperValue(valueRef.current, delta, { max, min, step });
 
       valueRef.current = nextValue;
       onChange(nextValue);
     },
-    [min, onChange, step]
+    [max, min, onChange, step]
   );
   const decrement = useCallback(() => changeBy(-step), [changeBy, step]);
   const increment = useCallback(() => changeBy(step), [changeBy, step]);
