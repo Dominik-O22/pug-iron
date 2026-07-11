@@ -44,17 +44,22 @@ Voice input (`expo-speech-recognition`) is a custom native module, so the dev lo
 ```sh
 bun install
 bunx expo prebuild --platform android   # regenerate android/ after native/plugin changes
+echo "sdk.dir=$HOME/Android/Sdk" > android/local.properties   # prebuild wipes it
 cd android && ./gradlew assembleDebug && cd ..
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 bunx expo start --dev-client --tunnel   # open the project from the dev client's launcher
 ```
 
-Rebuild the APK **only when native deps or app.json plugins change**; day-to-day JS work is Fast Refresh (~1 s), same as Expo Go. `--tunnel` sidesteps WSL2's NAT (phone can't reach the WSL IP directly; tunnel routes via ngrok). If tunnel is slow, alternatives: `adb reverse tcp:8085 tcp:8085` over USB, or Windows port-forwarding to the WSL IP.
+Rebuild the APK **only when native deps or app.json plugins change** — a JS import of a native module that isn't in the installed build fails at runtime with "Cannot find native module …", and a Metro 500 (e.g. missing `bun install` after a dependency change) can crash-loop the dev client. Recovery: fix the server, confirm `curl -s "localhost:8085/index.bundle?platform=android&dev=true" -o /dev/null -w '%{http_code}'` returns 200, then `adb shell am force-stop com.doop.pugiron` and relaunch. Day-to-day JS work is Fast Refresh (~1 s), same as Expo Go.
+
+`--tunnel` sidesteps WSL2's NAT (phone can't reach the WSL IP directly; tunnel routes via ngrok). Deep-link the dev client straight to the server (the launcher's URL field also works): `adb shell am start -a android.intent.action.VIEW -d "exp+pug-iron://expo-development-client/?url=http%3A%2F%2F<hostUri>"` — the hostUri comes from `curl -s localhost:8085 -H "expo-platform: android"` (`extra.expoClient.hostUri`); note the scheme is `exp+pug-iron://`, plain `pugiron://` doesn't resolve. If tunnel is slow: `adb reverse tcp:8085 tcp:8085` over USB with `http://127.0.0.1:8085` as the URL — but replugging the cable silently drops all reverses (symptom: endless spinner / "Failed to download remote update"); re-run the reverse after every replug.
 
 Unit tests (`src/logic/`) run with jest-expo on the desktop, no device needed.
 
-**On-device speech model:** voice input requires Android 13+ on-device recognition (`com.google.android.as`). If the offline English model isn't installed, the mic control in the logger shows disabled with a note; recognition never falls back to the network. Verify the manifest stays lean after native changes: `aapt dump permissions android/app/build/outputs/apk/debug/app-debug.apk` should gain `RECORD_AUDIO` and nothing else.
+**On-device speech model:** voice input requires Android 13+ on-device recognition (`com.google.android.as`). If the offline English model isn't installed, the mic control in the logger shows disabled with a note; recognition never falls back to the network. Verify the manifest stays lean after native changes: `aapt dump permissions android/app/build/outputs/apk/debug/app-debug.apk` — voice adds `RECORD_AUDIO`, reminders add `POST_NOTIFICATIONS` + `RECEIVE_BOOT_COMPLETED`; anything else new is suspect. (`expo-notifications` also drags in vendor badge/launcher permissions and `c2dm.RECEIVE` from its unused push machinery — candidates for `android.blockedPermissions`, like the already-blocked `CHANGE_WIFI_MULTICAST_STATE`.)
+
+**Pixel 9 recognizer quirk (do not "fix" the beep):** SODA on-device recognition returns empty transcripts whenever the recognizer runs off a custom audio source — which is what both documented beep workarounds (`continuous: true`, `recordingOptions.persist`) switch to under the hood. `src/lib/voiceControl.ts` deliberately runs one system-source session per utterance; the per-session beep is the price of working transcripts. Diagnose recognizer issues with `adb logcat | grep -iE "ExpoSpeech|SodaSpeech|RecognitionClient"` — it distinguishes "not hearing" from "hearing but returning empty".
 
 **Adding/aligning dependencies:** always `bunx expo install <pkg>` (never plain `bun add` for Expo/RN packages) — it resolves the SDK-matched version. Since SDK 55, all `expo-*` packages version as `~<sdk>.0.0` (e.g. `expo-sqlite@~57.0.0`); older `~15.x`-style pins are pre-SDK-55 and won't resolve. `bunx expo install --check` validates the whole set.
 
@@ -68,7 +73,7 @@ cd android && ./gradlew assembleDebug
 
 First Gradle run downloads Gradle + dependencies (~10 min); later builds are ~1 min.
 
-The **debug APK is fine for personal use** — signed with a debug key, installs anywhere. `assembleRelease` needs a keystore; not worth it unless Play Store distribution ever happens. Never add EAS Update/expo-updates — the app is fully offline by design.
+For daily use, build a **release APK**: `./gradlew assembleRelease` → `android/app/build/outputs/apk/release/app-release.apk`. It's standalone (bundled JS, Hermes, minified, ~39 MB vs ~89 MB debug) and needs no Metro. The Expo template signs release with the debug keystore — fine for personal sideloading, no Play Store keystore ceremony. Debug and release share the package name, so installing one replaces the other; SQLite data survives every `install -r` swap. Never add EAS Update/expo-updates — the app is fully offline by design.
 
 ## Install on the phone
 
