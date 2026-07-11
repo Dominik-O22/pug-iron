@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppState, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -487,6 +488,22 @@ function ReminderPanel({
     void onUpdate({ ...settings, weekdays });
   }
 
+  function openTimePicker() {
+    const value = new Date();
+    value.setHours(settings.hour, settings.minute, 0, 0);
+
+    DateTimePickerAndroid.open({
+      value,
+      mode: "time",
+      is24Hour: true,
+      onChange: (event, date) => {
+        if (event.type === "set" && date) {
+          void onUpdate({ ...settings, hour: date.getHours(), minute: date.getMinutes() });
+        }
+      }
+    });
+  }
+
   return (
     <Panel eyebrow="reminder">
       <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Reminder</Text>
@@ -517,26 +534,25 @@ function ReminderPanel({
               Notifications are off in Android settings, so nothing will show up.
             </Text>
           )}
-          <Stepper
-            formatValue={(value) => String(value).padStart(2, "0")}
-            label="Hour"
-            min={0}
-            onChange={(hour) =>
-              void onUpdate({ ...settings, hour: Math.min(23, Math.round(hour)) })
-            }
-            step={1}
-            value={settings.hour}
-          />
-          <Stepper
-            formatValue={(value) => String(value).padStart(2, "0")}
-            label="Minute"
-            min={0}
-            onChange={(minute) =>
-              void onUpdate({ ...settings, minute: Math.min(55, Math.round(minute)) })
-            }
-            step={5}
-            value={settings.minute}
-          />
+          <View>
+            <Text
+              className="mb-2 font-mono-medium text-[11px] uppercase text-text-dim"
+              style={labelTracking}
+            >
+              time
+            </Text>
+            <Pressable
+              accessibilityHint="Opens the time picker"
+              accessibilityLabel="Reminder time"
+              accessibilityRole="button"
+              className="min-h-[64px] items-center justify-center rounded-lg border border-line bg-panel-2 px-4"
+              onPress={() => openTimePicker()}
+            >
+              <Num weight="medium" className="text-[40px] leading-[48px] text-mint">
+                {`${String(settings.hour).padStart(2, "0")}:${String(settings.minute).padStart(2, "0")}`}
+              </Num>
+            </Pressable>
+          </View>
 
           <View>
             <Text
