@@ -58,7 +58,7 @@ Export/import per SPEC §6 (expo-file-system + expo-sharing + expo-document-pick
 
 ## Stretch goal — PM5 over BLE
 
-Passive live capture from the Concept2 PM5 (public GATT spec, base UUID `CE06xxxx-43E5-11E4-916C-0800200C9A66`): subscribe to rowing-status/stroke/summary characteristics, persist a captured session. Requires `react-native-ble-plx` → first native module → switch dev loop from Expo Go to a dev client (`npx expo run:android`, see BUILD.md). Start with a throwaway spike: scan, connect, subscribe to one metric, row 10 min, dump raw samples. Spec the captured-session data model (SPEC §3 extension) before building UI.
+Passive live capture from the Concept2 PM5 (public GATT spec, base UUID `CE06xxxx-43E5-11E4-916C-0800200C9A66`): subscribe to rowing-status/stroke/summary characteristics, persist a captured session. Requires `react-native-ble-plx` (the dev loop already runs through a dev client since voice input — see BUILD.md). Start with a throwaway spike: scan, connect, subscribe to one metric, row 10 min, dump raw samples. Spec the captured-session data model (SPEC §3 extension) before building UI.
 
 ## Deliberately later (post-v1 candidates)
 

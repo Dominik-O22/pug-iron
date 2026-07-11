@@ -39,18 +39,22 @@ sdk.dir=/home/<you>/Android/Sdk
 
 ## Dev loop
 
-v1 uses **no custom native modules** — expo-sqlite, expo-haptics, expo-file-system, expo-sharing, react-native-svg are all in Expo Go. So until the PM5 BLE stretch goal lands, the loop is just:
+Voice input (`expo-speech-recognition`) is a custom native module, so the dev loop runs through a **dev client** — a one-time debug build that then behaves exactly like Expo Go:
 
 ```sh
 bun install
-bunx expo start --tunnel    # scan QR with Expo Go on the phone
+bunx expo prebuild --platform android   # regenerate android/ after native/plugin changes
+cd android && ./gradlew assembleDebug && cd ..
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+bunx expo start --dev-client --tunnel   # open the project from the dev client's launcher
 ```
 
-`--tunnel` sidesteps WSL2's NAT (phone can't reach the WSL IP directly; tunnel routes via ngrok). If tunnel is slow, alternatives: `adb reverse tcp:8081 tcp:8081` over USB, or Windows port-forwarding to the WSL IP.
+Rebuild the APK **only when native deps or app.json plugins change**; day-to-day JS work is Fast Refresh (~1 s), same as Expo Go. `--tunnel` sidesteps WSL2's NAT (phone can't reach the WSL IP directly; tunnel routes via ngrok). If tunnel is slow, alternatives: `adb reverse tcp:8085 tcp:8085` over USB, or Windows port-forwarding to the WSL IP.
 
-Fast Refresh applies JS edits in ~1 s. Unit tests (`src/logic/`) run with jest-expo on the desktop, no device needed.
+Unit tests (`src/logic/`) run with jest-expo on the desktop, no device needed.
 
-**When BLE arrives** (react-native-ble-plx = custom native module): switch to a dev client — `bunx expo run:android` once builds and installs a debug app that behaves exactly like Expo Go (`bunx expo start --dev-client`). Rebuild only when native deps change.
+**On-device speech model:** voice input requires Android 13+ on-device recognition (`com.google.android.as`). If the offline English model isn't installed, the mic control in the logger shows disabled with a note; recognition never falls back to the network. Verify the manifest stays lean after native changes: `aapt dump permissions android/app/build/outputs/apk/debug/app-debug.apk` should gain `RECORD_AUDIO` and nothing else.
 
 **Adding/aligning dependencies:** always `bunx expo install <pkg>` (never plain `bun add` for Expo/RN packages) — it resolves the SDK-matched version. Since SDK 55, all `expo-*` packages version as `~<sdk>.0.0` (e.g. `expo-sqlite@~57.0.0`); older `~15.x`-style pins are pre-SDK-55 and won't resolve. `bunx expo install --check` validates the whole set.
 

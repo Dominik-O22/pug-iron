@@ -10,6 +10,7 @@
     "backgroundColor": "#0C1210",
     "android": {
       "package": "com.doop.pugiron",
+      "blockedPermissions": ["android.permission.CHANGE_WIFI_MULTICAST_STATE"],
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -17,10 +18,19 @@
       }
     },
     "plugins": [
+      "expo-dev-client",
       "expo-font",
       "expo-sqlite",
       "expo-status-bar",
       "expo-sharing",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to hear rep counts during a workout.",
+          "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to recognize spoken rep counts.",
+          "androidSpeechServicePackages": ["com.google.android.as"]
+        }
+      ],
       [
         "expo-audio",
         {
