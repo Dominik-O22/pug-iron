@@ -34,10 +34,17 @@ export function useVoiceControl({
 
   const startRecognition = useCallback(() => {
     try {
+      // Not continuous, no custom audio source: on this Pixel, SODA on-device
+      // recognition returns EMPTY transcripts whenever the recognizer runs off
+      // a custom source — which is what both continuous:true and
+      // recordingOptions.persist switch to under the hood (verified on-device
+      // 2026-07-11; both documented beep workarounds are therefore unusable
+      // here). One system-source session per utterance; the "end" handler
+      // rejoins. The per-session beep is the price of working transcripts.
       ExpoSpeechRecognitionModule.start({
         lang: "en-US",
         interimResults: false,
-        continuous: true,
+        continuous: false,
         requiresOnDeviceRecognition: true,
         addsPunctuation: false
       });
