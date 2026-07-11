@@ -22,6 +22,15 @@
       "expo-status-bar",
       "expo-sharing",
       [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",

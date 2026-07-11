@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
+import * as Speech from "expo-speech";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -33,6 +34,10 @@ import {
   type PullupStage
 } from "../logic/progression";
 import { resolveLadderExerciseId } from "../logic/pullup";
+import {
+  formatExerciseTargetForSpeech,
+  formatRestDoneForSpeech
+} from "../logic/speech";
 import { calculateSessionVolume } from "../logic/workouts";
 import type { ExerciseDef, ExerciseLog, SetEntry, WorkoutSession } from "../types";
 
@@ -60,7 +65,8 @@ export function WorkoutLoggerModal({
   loggerState,
   pullupStage,
   onClose,
-  onSave
+  onSave,
+  voiceAnnouncements
 }: {
   exercises: ExerciseDef[];
   latestLogs: Record<string, ExerciseLog>;
@@ -68,6 +74,7 @@ export function WorkoutLoggerModal({
   pullupStage: PullupStage;
   onClose: () => void;
   onSave: (session: WorkoutSession) => Promise<void>;
+  voiceAnnouncements: boolean;
 }) {
   useKeepAwake("pug-iron-workout-logger");
 
@@ -93,6 +100,7 @@ export function WorkoutLoggerModal({
   const [setIndexes, setSetIndexes] = useState(() => exercises.map(() => 0));
   const [mode, setMode] = useState<"logging" | "summary" | "saving">("logging");
   const [rest, setRest] = useState<RestState | null>(null);
+  const [restAnnouncement, setRestAnnouncement] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState<boolean[]>(() => exercises.map(() => false));
   const savingRef = useRef(false);
   const { dialog, show } = useDialog();
@@ -148,6 +156,19 @@ export function WorkoutLoggerModal({
   const activeSetIndex = Math.min(setIndexes[exerciseIndex] ?? 0, activeDraft.sets.length - 1);
   const activeSet = activeDraft.sets[activeSetIndex];
 
+  const restRef = useRef(rest);
+  restRef.current = rest;
+
+  useEffect(() => {
+    // A rest at an exercise boundary already announces the next target via
+    // the rest-done line; announcing here too would speak it twice.
+    if (!voiceAnnouncements || restRef.current) {
+      return;
+    }
+
+    void speakAnnouncement(formatExerciseTargetForSpeech(activeDraft.exercise, activeSet));
+  }, [activeDraft.exercise.id, voiceAnnouncements]);
+
   const updateActiveSet = useCallback(
     (nextSet: Partial<SetEntry>) => {
       setDraftExercises((current) =>
@@ -191,6 +212,17 @@ export function WorkoutLoggerModal({
         draftIndex === exerciseIndex ? { ...draft, sets: updatedSets } : draft
       )
     );
+    const nextTarget = findNextTarget(
+      draftExercises,
+      exerciseIndex,
+      nextSetIndex,
+      updatedSets
+    );
+    setRestAnnouncement(
+      voiceAnnouncements
+        ? formatRestDoneForSpeech(nextTarget?.exercise ?? null, nextTarget?.set ?? null)
+        : null
+    );
     setRest({
       startedAt: Date.now(),
       durationMs: (activeDraft.exercise.restSec ?? DEFAULT_REST_SEC) * 1000
@@ -206,7 +238,15 @@ export function WorkoutLoggerModal({
     if (exerciseIndex < draftExercises.length - 1) {
       setExerciseIndex((current) => current + 1);
     }
-  }, [activeDraft.sets, activeSet.weight, activeSetIndex, draftExercises.length, exerciseIndex]);
+  }, [
+    activeDraft.exercise.restSec,
+    activeDraft.sets,
+    activeSet.weight,
+    activeSetIndex,
+    draftExercises,
+    exerciseIndex,
+    voiceAnnouncements
+  ]);
 
   const confirmDiscard = useCallback(() => {
     // A save in flight is already committing; don't offer to walk away from it.
@@ -392,7 +432,11 @@ export function WorkoutLoggerModal({
 
                 {rest ? (
                   <View className="px-5 pt-3">
-                    <RestTimer rest={rest} onDismiss={() => setRest(null)} />
+                    <RestTimer
+                      announcement={restAnnouncement}
+                      rest={rest}
+                      onDismiss={() => setRest(null)}
+                    />
                   </View>
                 ) : null}
 
@@ -435,6 +479,39 @@ export function WorkoutLoggerModal({
       </View>
     </Modal>
   );
+}
+
+function findNextTarget(
+  drafts: DraftExercise[],
+  exerciseIndex: number,
+  nextSetIndex: number,
+  updatedSets: DraftExercise["sets"]
+): { exercise: ExerciseDef; set: SetEntry } | null {
+  if (nextSetIndex >= 0) {
+    return { exercise: drafts[exerciseIndex].exercise, set: updatedSets[nextSetIndex] };
+  }
+
+  for (let index = exerciseIndex + 1; index < drafts.length; index += 1) {
+    const nextSet = drafts[index].sets.find((set) => !set.logged);
+
+    if (nextSet) {
+      return { exercise: drafts[index].exercise, set: nextSet };
+    }
+  }
+
+  return null;
+}
+
+async function speakAnnouncement(announcement: string): Promise<void> {
+  try {
+    await Speech.stop();
+    Speech.speak(announcement, {
+      language: "en-US",
+      onError: (error) => console.error("Exercise announcement failed", error)
+    });
+  } catch (error: unknown) {
+    console.error("Exercise announcement failed", error);
+  }
 }
 
 function ActiveSetInputs({

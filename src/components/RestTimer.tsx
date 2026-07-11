@@ -8,15 +8,28 @@ import Animated, {
   withSequence,
   withTiming
 } from "react-native-reanimated";
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
 
 import { formatRestTime, labelTracking } from "../lib/format";
 import type { RestState } from "../lib/session";
 import { Num } from "./Num";
 
-export function RestTimer({ onDismiss, rest }: { onDismiss: () => void; rest: RestState }) {
+export function RestTimer({
+  announcement,
+  onDismiss,
+  rest
+}: {
+  announcement: string | null;
+  onDismiss: () => void;
+  rest: RestState;
+}) {
   const [now, setNow] = useState(Date.now());
   const doneRef = useRef<number | null>(null);
+  const pendingAnnouncementRef = useRef<string | null>(null);
+  const player = useAudioPlayer(require("../../assets/rest-done.wav"));
+  const playerStatus = useAudioPlayerStatus(player);
   const remainingMs = Math.max(0, rest.durationMs - (now - rest.startedAt));
   const progress = remainingMs / rest.durationMs;
   const done = remainingMs <= 0;
@@ -31,18 +44,38 @@ export function RestTimer({ onDismiss, rest }: { onDismiss: () => void; rest: Re
     return () => clearInterval(interval);
   }, [rest.startedAt]);
 
+  // Dismissing rest mid-chime unmounts before didJustFinish fires; without
+  // this the global audio mode would stay stuck on duckOthers.
   useEffect(() => {
-    // Fire the rest-complete cues exactly once per rest: a haptic (for a phone
-    // in hand) and a one-shot pulse plus the static "GO" state (for a phone at
-    // arm's length, where the haptic is missed).
+    return () => {
+      if (pendingAnnouncementRef.current !== null || doneRef.current !== null) {
+        void restoreMixingMode();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!done || doneRef.current === rest.startedAt) {
       return;
     }
 
     doneRef.current = rest.startedAt;
+    pendingAnnouncementRef.current = announcement;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch((error: unknown) => {
       console.error("Rest haptic failed", error);
     });
+    setAudioModeAsync({ interruptionMode: "duckOthers" })
+      .then(() => player.seekTo(0))
+      .then(() => player.play())
+      .catch((error: unknown) => {
+        pendingAnnouncementRef.current = null;
+        console.error("Rest chime failed", error);
+        void restoreMixingMode();
+
+        if (announcement) {
+          void speakAnnouncement(announcement);
+        }
+      });
 
     if (!reduceMotion) {
       pulse.value = withSequence(
@@ -50,7 +83,21 @@ export function RestTimer({ onDismiss, rest }: { onDismiss: () => void; rest: Re
         withTiming(1, { duration: 280, easing: Easing.out(Easing.quad) })
       );
     }
-  }, [done, pulse, reduceMotion, rest.startedAt]);
+  }, [announcement, done, player, pulse, reduceMotion, rest.startedAt]);
+
+  useEffect(() => {
+    if (!playerStatus.didJustFinish) {
+      return;
+    }
+
+    const pendingAnnouncement = pendingAnnouncementRef.current;
+    pendingAnnouncementRef.current = null;
+    void restoreMixingMode();
+
+    if (pendingAnnouncement) {
+      void speakAnnouncement(pendingAnnouncement);
+    }
+  }, [playerStatus.didJustFinish]);
 
   return (
     <Animated.View style={pulseStyle}>
@@ -92,4 +139,24 @@ export function RestTimer({ onDismiss, rest }: { onDismiss: () => void; rest: Re
       </Pressable>
     </Animated.View>
   );
+}
+
+async function restoreMixingMode(): Promise<void> {
+  try {
+    await setAudioModeAsync({ interruptionMode: "mixWithOthers" });
+  } catch (error: unknown) {
+    console.error("Restoring audio mode failed", error);
+  }
+}
+
+async function speakAnnouncement(announcement: string): Promise<void> {
+  try {
+    await Speech.stop();
+    Speech.speak(announcement, {
+      language: "en-US",
+      onError: (error) => console.error("Rest announcement failed", error)
+    });
+  } catch (error: unknown) {
+    console.error("Rest announcement failed", error);
+  }
 }

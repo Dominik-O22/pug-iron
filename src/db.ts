@@ -90,6 +90,7 @@ type CountRow = {
 const DEFAULT_SETTINGS: Setting[] = [
   { key: "xpTotal", value: 0 },
   { key: "targetWeightKg", value: 83 },
+  { key: "voiceAnnouncements", value: false },
   { key: "schemaVersion", value: 4 }
 ];
 
@@ -245,6 +246,14 @@ export async function setReminderSettings(
   settings: ReminderSettings
 ): Promise<void> {
   await setSettingValue(db, "reminderSettings", settings);
+}
+
+export async function getVoiceAnnouncements(db: PugIronDb): Promise<boolean> {
+  return getSettingValue(db, "voiceAnnouncements", false);
+}
+
+export async function setVoiceAnnouncements(db: PugIronDb, enabled: boolean): Promise<void> {
+  await setSettingValue(db, "voiceAnnouncements", enabled);
 }
 
 export async function getTodayWorkoutSessions(

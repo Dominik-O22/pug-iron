@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -11,6 +11,7 @@ import { Stepper } from "../components/Stepper";
 import {
   getBackupSourceData,
   replaceAllDataWithBackup,
+  setVoiceAnnouncements,
   updateExerciseDefs,
   wipeAllDataAndReseed,
   type PugIronDb
@@ -40,15 +41,18 @@ export function SettingsScreen({
   exercises,
   onDataChanged,
   onUpdateReminderSettings,
-  reminderSettings
+  reminderSettings,
+  voiceAnnouncements
 }: {
   db: PugIronDb;
   exercises: ExerciseDef[];
   onDataChanged: () => Promise<void>;
   onUpdateReminderSettings: (settings: ReminderSettings) => Promise<void>;
   reminderSettings: ReminderSettings;
+  voiceAnnouncements: boolean;
 }) {
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(voiceAnnouncements);
   const [draftExercises, setDraftExercises] = useState(() => normalizeExerciseOrders(exercises));
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const { dialog, show } = useDialog();
@@ -69,6 +73,23 @@ export function SettingsScreen({
   useEffect(() => {
     setDraftExercises(normalizeExerciseOrders(exercises));
   }, [exercises]);
+
+  useEffect(() => {
+    setVoiceEnabled(voiceAnnouncements);
+  }, [voiceAnnouncements]);
+
+  async function updateVoiceAnnouncements(enabled: boolean) {
+    setVoiceEnabled(enabled);
+
+    try {
+      await setVoiceAnnouncements(db, enabled);
+      await onDataChanged();
+    } catch (error: unknown) {
+      setVoiceEnabled(!enabled);
+      console.error("Failed to save voice announcements", error);
+      info("voice announcements", "Setting could not be saved.", "Give it another go.");
+    }
+  }
 
   async function exportBackup() {
     if (busyAction) {
@@ -299,6 +320,27 @@ export function SettingsScreen({
   return (
     <>
       <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+      <Panel eyebrow="audio">
+        <View className="flex-row items-center justify-between gap-4">
+          <View className="flex-1">
+            <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">
+              Voice announcements
+            </Text>
+            <Text className="mt-1 font-barlow text-[16px] leading-[22px] text-text-dim">
+              Reads the next target out loud when rest ends.
+            </Text>
+          </View>
+          <Switch
+            accessibilityLabel="Voice announcements"
+            accessibilityRole="switch"
+            onValueChange={(enabled) => void updateVoiceAnnouncements(enabled)}
+            thumbColor={voiceEnabled ? tokens.colors.mint : tokens.colors.textDim}
+            trackColor={{ false: tokens.colors.line, true: tokens.colors.petrol }}
+            value={voiceEnabled}
+          />
+        </View>
+      </Panel>
+
       <Panel eyebrow="backup">
         <Text className="font-barlow-bold text-[32px] leading-[36px] text-text">Backup</Text>
         <View className="mt-5 gap-3">
