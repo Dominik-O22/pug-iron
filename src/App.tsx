@@ -16,6 +16,7 @@ import {
   getPullupStage,
   getReminderSettings,
   getTodayWorkoutSessions,
+  getVoiceAnnouncements,
   getWeightSettings,
   getXpTotal,
   insertRowSessionWithXp,
@@ -62,6 +63,7 @@ type AppData = {
   sessions: WorkoutSession[];
   todaySessions: WorkoutSession[];
   weighIns: WeighIn[];
+  voiceAnnouncements: boolean;
   weightSettings: WeightSettings;
   xpTotal: number;
 };
@@ -92,7 +94,8 @@ function PugIronApp() {
       weightSettings,
       lifetimeTotals,
       pullupStage,
-      reminderSettings
+      reminderSettings,
+      voiceAnnouncements
     ] = await Promise.all([
       listExerciseDefs(database),
       listWorkoutSessions(database),
@@ -103,7 +106,8 @@ function PugIronApp() {
       getWeightSettings(database),
       getLifetimeTotals(database),
       getPullupStage(database),
-      getReminderSettings(database)
+      getReminderSettings(database),
+      getVoiceAnnouncements(database)
     ]);
     const latestLogs = await getLatestExerciseLogs(
       database,
@@ -119,6 +123,7 @@ function PugIronApp() {
       rowSessions,
       sessions,
       todaySessions,
+      voiceAnnouncements,
       weighIns,
       weightSettings,
       xpTotal
@@ -334,6 +339,7 @@ function PugIronApp() {
           pullupStage={appData.pullupStage}
           onClose={() => setLoggerState(null)}
           onSave={handleSaveSession}
+          voiceAnnouncements={appData.voiceAnnouncements}
         />
       ) : null}
       <RankUpModal onDismiss={() => setRankUpRank(null)} rank={rankUpRank} />
@@ -414,6 +420,7 @@ function renderScreen({
       onDataChanged={onDataChanged}
       onUpdateReminderSettings={onUpdateReminderSettings}
       reminderSettings={appData.reminderSettings}
+      voiceAnnouncements={appData.voiceAnnouncements}
     />
   );
 }
