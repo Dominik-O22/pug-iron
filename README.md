@@ -17,12 +17,13 @@ A personal workout-tracking Android app for the [6-month home physique plan](htt
 
 | Layer | Choice | Why |
 |---|---|---|
-| UI | React Native 0.86 + TypeScript via **Expo SDK 57** | Native app, typed data model, Expo Go dev loop until native modules arrive |
+| UI | React Native 0.86 + TypeScript via **Expo SDK 57** | Native app, typed data model, dev-client dev loop (voice input needs a native module) |
 | Styling | NativeWind v4 | Tailwind-style tokens over RN StyleSheet; design tokens in `tailwind.config.js` |
 | Storage | expo-sqlite | Durable native SQLite — no WebView storage caveats; WAL, transactions |
 | Charts | Hand-rolled react-native-svg | Two simple line charts don't justify a chart dependency |
 | Routing | None (state-based tabs) | Four screens, no deep links needed — no expo-router |
-| Stretch: PM5 BLE | react-native-ble-plx | Public Concept2 GATT spec; first thing that forces a dev-client build |
+| Voice input | expo-speech-recognition | On-device Android STT for hands-free set logging; the native module that moved the dev loop to a dev client |
+| Stretch: PM5 BLE | react-native-ble-plx | Public Concept2 GATT spec |
 
 Toolchain: JDK 17 + Android SDK Platform 35 (headless, no Android Studio) — see [docs/BUILD.md](docs/BUILD.md).
 
@@ -42,7 +43,7 @@ docs/
 
 ```sh
 bun install
-bunx expo start --tunnel    # scan the QR with Expo Go on the phone
+bunx expo start --dev-client --tunnel   # open from the dev client on the phone
 ```
 
-APK builds need JDK 17 and the Android SDK — see [docs/BUILD.md](docs/BUILD.md) for the exact headless setup (no Android Studio required).
+The dev client is a one-time debug APK build — JDK 17 and the Android SDK required; see [docs/BUILD.md](docs/BUILD.md) for the exact headless setup (no Android Studio required).

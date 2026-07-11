@@ -203,5 +203,5 @@ Share via `expo-file-system` (write to cache dir) + `expo-sharing`; import via `
 - No diet/calorie tracking (user handles diet, uses a dedicated app).
 - No cloud sync, accounts, or multi-device merge — export/import is the migration path.
 - No exercise library beyond the plan's ten movements (editable, but no picker UI).
-- No Bluetooth/PM5 pairing for the Concept2 in v1 — manual entry only. **Declared stretch goal**: passive BLE capture from the PM5 (public GATT spec, `react-native-ble-plx`, foreground only). First thing that forces a dev-client build instead of Expo Go; captured row sessions will need their own richer shape than `RowSession` — spec that when it starts.
+- No Bluetooth/PM5 pairing for the Concept2 in v1 — manual entry only. **Declared stretch goal**: passive BLE capture from the PM5 (public GATT spec, `react-native-ble-plx`, foreground only). The dev loop already runs through a dev client (voice input); captured row sessions will need their own richer shape than `RowSession` — spec that when it starts.
 - A single opt-in pre-session reminder exists (§2.6). Anything beyond it — nagging, missed-session messaging, follow-ups, escalation — remains out of scope, as it violates §5's spirit.

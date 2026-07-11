@@ -16,7 +16,7 @@ Personal Android workout tracker (React Native + Expo SDK 57) for a specific 6-m
 - **Fully offline.** No CDN links (fonts are bundled TTFs via expo-font), no analytics, no expo-updates/EAS Update, no network calls at all.
 - **Data is sacred.** All user data in expo-sqlite; any schema change needs a `PRAGMA user_version` bump + migration; export/import must stay compatible or bump `schemaVersion` with an import shim.
 - Keep dependencies minimal: React Native, Expo SDK packages, NativeWind v4, react-native-svg. Hand-rolled SVG charts — no chart/UI/router libraries (no expo-router; tabs are a `screen` state value).
-- **Expo Go stays sufficient for v1.** Don't add custom native modules before the PM5 BLE stretch goal (PLAN.md) — that's the deliberate line where the dev loop switches to a dev client.
+- **Dev client, minimal native surface.** Voice input (issue #3) moved the dev loop to a dev-client build earlier than the PM5 BLE line: the only custom native modules are `expo-dev-client` and `expo-speech-recognition` — don't add more before BLE. Speech recognition is on-device only (`requiresOnDeviceRecognition`); the manifest gains `RECORD_AUDIO` and nothing else.
 
 ## Conventions
 
