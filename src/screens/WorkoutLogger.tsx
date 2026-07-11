@@ -761,10 +761,14 @@ function ActiveSetInputs({
   );
 }
 
-// Tap to start, tap to stop — or "start"/"stop" by voice via controlRef. The live
-// count writes straight into the active set on stop; the stepper below fine-tunes
-// it. The logger already holds a keep-awake lock. Unmounting mid-hold (screen
-// closed, set switched) discards the hold — nothing is committed.
+const HOLD_COUNTDOWN_START = 3;
+
+// Tap to start, tap to stop — or "start"/"stop" by voice via controlRef. A short
+// spoken countdown ("three, two, one, go") runs before the hold so hands can get
+// on the bar; the live count writes straight into the active set on stop and the
+// stepper below fine-tunes it. The logger already holds a keep-awake lock.
+// Unmounting mid-hold or mid-countdown (screen closed, set switched) discards
+// everything — nothing is committed.
 function HoldTimerButton({
   controlRef,
   onCommit,
@@ -775,9 +779,11 @@ function HoldTimerButton({
   seconds: number;
 }) {
   const [running, setRunning] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const startedAtRef = useRef(0);
   const runningRef = useRef(false);
+  const countdownRef = useRef(false);
 
   useEffect(() => {
     if (!running) {
@@ -791,18 +797,50 @@ function HoldTimerButton({
     return () => clearInterval(id);
   }, [running]);
 
-  const start = useCallback(() => {
-    if (runningRef.current) {
-      return;
-    }
-
+  const beginHold = useCallback(() => {
+    countdownRef.current = false;
+    setCountdown(null);
     runningRef.current = true;
     startedAtRef.current = Date.now();
     setElapsed(0);
     setRunning(true);
   }, []);
 
+  useEffect(() => {
+    if (countdown === null) {
+      return;
+    }
+
+    void speakAnnouncement(countdown === 0 ? "go" : numberToSpeech(countdown));
+
+    if (countdown === 0) {
+      beginHold();
+      return;
+    }
+
+    const id = setTimeout(() => setCountdown(countdown - 1), 1000);
+
+    return () => clearTimeout(id);
+  }, [beginHold, countdown]);
+
+  const start = useCallback(() => {
+    if (runningRef.current || countdownRef.current) {
+      return;
+    }
+
+    countdownRef.current = true;
+    setCountdown(HOLD_COUNTDOWN_START);
+  }, []);
+
   const stop = useCallback(() => {
+    // Mid-countdown, stop cancels instead of committing a zero-second hold.
+    if (countdownRef.current) {
+      countdownRef.current = false;
+      setCountdown(null);
+      void Speech.stop();
+      return;
+    }
+
     if (!runningRef.current) {
       return;
     }
@@ -825,7 +863,7 @@ function HoldTimerButton({
   }, [controlRef, start, stop]);
 
   function toggle() {
-    if (runningRef.current) {
+    if (runningRef.current || countdownRef.current) {
       stop();
       return;
     }
@@ -833,28 +871,41 @@ function HoldTimerButton({
     start();
   }
 
-  const display = running ? elapsed : seconds;
+  const display = running ? elapsed : countdown ?? seconds;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: running }}
       className={`min-h-[116px] items-center justify-center rounded-lg border ${
-        running ? "border-amber bg-petrol" : "border-line bg-panel-2"
+        running || countdown !== null ? "border-amber bg-petrol" : "border-line bg-panel-2"
       }`}
       onPress={toggle}
     >
       <Text
-        className={`font-mono-medium text-[11px] uppercase ${running ? "text-amber" : "text-text-dim"}`}
+        className={`font-mono-medium text-[11px] uppercase ${
+          running || countdown !== null ? "text-amber" : "text-text-dim"
+        }`}
         style={labelTracking}
       >
-        {running ? "holding — tap to stop" : "tap to start hold"}
+        {running
+          ? "holding — tap to stop"
+          : countdown !== null
+            ? "get on the bar — tap to cancel"
+            : "tap to start hold"}
       </Text>
       <View className="mt-1 flex-row items-baseline">
-        <Num weight="medium" className={`text-[56px] leading-[60px] ${running ? "text-amber" : "text-mint"}`}>
+        <Num
+          weight="medium"
+          className={`text-[56px] leading-[60px] ${
+            running || countdown !== null ? "text-amber" : "text-mint"
+          }`}
+        >
           {display}
         </Num>
-        <Text className="ml-1 font-barlow text-[18px] text-text-dim">s</Text>
+        {countdown === null ? (
+          <Text className="ml-1 font-barlow text-[18px] text-text-dim">s</Text>
+        ) : null}
       </View>
     </Pressable>
   );
